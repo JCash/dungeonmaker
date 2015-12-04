@@ -45,7 +45,6 @@ void    jc_roommaker_free(SRoomMakerContext* ctx, SRooms* rooms);
 
 #ifdef JC_ROOMMAKER_IMPLEMENTATION
 
-
 static void jc_roommaker_make_rooms(SRoomMakerContext* ctx, SRooms* rooms, int numrooms, int numattempts);
 
 SRooms* jc_roommaker_create(SRoomMakerContext* ctx)
@@ -57,9 +56,9 @@ SRooms* jc_roommaker_create(SRoomMakerContext* ctx)
     rooms->numrooms = 0;
     rooms->rooms    = (SRoom*)malloc( sizeof(SRoom) * ctx->dimensions[0] * ctx->dimensions[1] );
 
-    memset(rooms->grid, 0, sizeof(int) * ctx->dimensions[0] * ctx->dimensions[1] );
+    memset(rooms->grid, 0, sizeof(uint16_t) * ctx->dimensions[0] * ctx->dimensions[1] );
 
-    jc_roommaker_make_rooms(ctx, rooms, ctx->maxnumrooms, 100);
+    jc_roommaker_make_rooms(ctx, rooms, ctx->maxnumrooms, 1000);
 
     return rooms;
 }

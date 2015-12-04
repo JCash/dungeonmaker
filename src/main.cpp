@@ -9,9 +9,9 @@
 #define JC_ROOMMAKER_IMPLEMENTATION
 #include "jc_roommaker.h"
 
-const int ROOMSDIMS = 64;
+const int NUMCELLS = 256;
 const int PIXELS_PER_ROOM = 1;
-const int IMAGEDIMS = 64 * PIXELS_PER_ROOM;
+const int IMAGEDIMS = NUMCELLS * PIXELS_PER_ROOM;
 
 
 struct SImage
@@ -57,9 +57,9 @@ int main(int argc, const char** argv)
     (void)argc;
     (void)argv;
     SRoomMakerContext roomctx;
-    roomctx.dimensions[0]   = ROOMSDIMS;
-    roomctx.dimensions[1]   = ROOMSDIMS;
-    roomctx.maxnumrooms     = (int)sqrtf(ROOMSDIMS);
+    roomctx.dimensions[0]   = NUMCELLS;
+    roomctx.dimensions[1]   = NUMCELLS;
+    roomctx.maxnumrooms     = (int)sqrtf(NUMCELLS) * 40;
     roomctx.seed            = 0;
 
     printf("Dims: %d, %d\n", roomctx.dimensions[0], roomctx.dimensions[1]);
@@ -85,7 +85,7 @@ int main(int argc, const char** argv)
     char path[512];
     sprintf(path, "%s", outputfile);
     stbi_write_png(path, image.width, image.height, image.channels, image.bytes, image.width*image.channels);
-    printf("wrote %s\n", path);
+    printf("wrote %s (%d x %d x %d)\n", path, image.width, image.height, image.channels);
 
     free(image.bytes);
 
