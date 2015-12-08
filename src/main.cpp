@@ -1,6 +1,7 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <sys/time.h>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -12,6 +13,38 @@
 const int NUMCELLS = 256;
 const int PIXELS_PER_ROOM = 1;
 const int IMAGEDIMS = NUMCELLS * PIXELS_PER_ROOM;
+
+
+class Timer {
+private:
+
+    timeval startTime;
+
+public:
+
+    void start(){
+        gettimeofday(&startTime, NULL);
+    }
+
+    double stop(){
+        timeval endTime;
+        long seconds, useconds;
+        double duration;
+
+        gettimeofday(&endTime, NULL);
+
+        seconds  = endTime.tv_sec  - startTime.tv_sec;
+        useconds = endTime.tv_usec - startTime.tv_usec;
+
+        duration = seconds + useconds/1000000.0;
+
+        return duration;
+    }
+
+    static void printTime(double duration){
+        printf("%5.6f seconds\n", duration);
+    }
+};
 
 
 struct SImage
@@ -35,7 +68,6 @@ static void render_room(const SRoom* room, SImage* image)
         {
             int index = (yy * PIXELS_PER_ROOM) * image->width * image->channels + (xx * PIXELS_PER_ROOM) * image->channels;
 
-            int roomid = room->id;
             image->bytes[index+0] = color[0];
             image->bytes[index+1] = color[1];
             image->bytes[index+2] = color[2];
@@ -45,8 +77,31 @@ static void render_room(const SRoom* room, SImage* image)
 
 static void render_rooms(const SRooms* rooms, SImage* image)
 {
-    for( int i = 0; i < rooms->numrooms; ++i )
-        render_room(&rooms->rooms[i], image);
+    //for( int i = 0; i < rooms->numrooms; ++i )
+    //    render_room(&rooms->rooms[i], image);
+
+    uint8_t colors[256*3] = { 0,0,0 };
+    for( int i = 1; i < 256; ++i)
+    {
+        int index = i * 3;
+        colors[index + 0] = 60 + (uint8_t)(jc_roommaker_rand01() * 120);
+        colors[index + 1] = 60 + (uint8_t)(jc_roommaker_rand01() * 120);
+        colors[index + 2] = 60 + (uint8_t)(jc_roommaker_rand01() * 120);
+    }
+
+    for( int y = 0; y < rooms->dimensions[1]; ++y)
+    {
+        for( int x = 0; x < rooms->dimensions[0]; ++x)
+        {
+            int index = (y * PIXELS_PER_ROOM) * image->width * image->channels + (x * PIXELS_PER_ROOM) * image->channels;
+
+            int roomid = rooms->grid[y * rooms->dimensions[0] + x];
+            roomid = roomid % 256;
+            image->bytes[index+0] = colors[roomid*3 + 0];
+            image->bytes[index+1] = colors[roomid*3 + 1];
+            image->bytes[index+2] = colors[roomid*3 + 2];
+        }
+    }
 }
 
 
@@ -65,7 +120,12 @@ int main(int argc, const char** argv)
     printf("Dims: %d, %d\n", roomctx.dimensions[0], roomctx.dimensions[1]);
     printf("Seed: 0x%08x\n", roomctx.seed);
 
+    Timer timer;
+    timer.start();
     SRooms* rooms = jc_roommaker_create(&roomctx);
+    double elapsed = timer.stop();
+
+    printf("Dungeon generated in %f ms\n", elapsed*1000.0f);
 
     SImage image;
     image.width     = IMAGEDIMS;

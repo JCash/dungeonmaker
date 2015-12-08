@@ -26,7 +26,7 @@ struct SRooms
 {
     uint16_t    dimensions[2];
     uint16_t    numrooms;
-    uint16_t    _pad;
+    uint16_t    nextid;
     uint16_t*   grid;
     SRoom*      rooms;
 };
@@ -46,19 +46,23 @@ void    jc_roommaker_free(SRoomMakerContext* ctx, SRooms* rooms);
 #ifdef JC_ROOMMAKER_IMPLEMENTATION
 
 static void jc_roommaker_make_rooms(SRoomMakerContext* ctx, SRooms* rooms, int numrooms, int numattempts);
+static void jc_roommaker_make_mazes(SRoomMakerContext* ctx, SRooms* rooms);
 
 SRooms* jc_roommaker_create(SRoomMakerContext* ctx)
 {
+    // TODO: Separate the context creation from the running of the algorithms
     SRooms* rooms   = (SRooms*)malloc(sizeof(SRooms));
     rooms->dimensions[0] = ctx->dimensions[0];
     rooms->dimensions[1] = ctx->dimensions[1];
     rooms->grid     = (uint16_t*)malloc( sizeof(uint16_t) * ctx->dimensions[0] * ctx->dimensions[1] );
     rooms->numrooms = 0;
     rooms->rooms    = (SRoom*)malloc( sizeof(SRoom) * ctx->dimensions[0] * ctx->dimensions[1] );
+    rooms->nextid   = 1;
 
     memset(rooms->grid, 0, sizeof(uint16_t) * ctx->dimensions[0] * ctx->dimensions[1] );
 
     jc_roommaker_make_rooms(ctx, rooms, ctx->maxnumrooms, 1000);
+    jc_roommaker_make_mazes(ctx, rooms);
 
     return rooms;
 }
@@ -171,13 +175,14 @@ static void jc_roommaker_make_rooms(SRoomMakerContext* ctx, SRooms* rooms, int n
         {
             SRoom* room = &rooms->rooms[rooms->numrooms];
             memset(room, 0, sizeof(SRoom));
-            room->id = ++rooms->numrooms;
+            room->id        = ++rooms->nextid;
             room->pos[0]    = posx;
             room->pos[1]    = posy;
             room->dims[0]   = width;
             room->dims[1]   = height;
+            ++rooms->numrooms;
 
-            printf("room: %d   x, y: %d, %d   w, h: %d, %d\n", room->id, room->pos[0], room->pos[1], room->dims[0], room->dims[1]);
+            //printf("room: %d   x, y: %d, %d   w, h: %d, %d\n", room->id, room->pos[0], room->pos[1], room->dims[0], room->dims[1]);
 
             for( int y = posy; y < (posy + height) && y < ctx->dimensions[1]; ++y)
             {
@@ -191,6 +196,76 @@ static void jc_roommaker_make_rooms(SRoomMakerContext* ctx, SRooms* rooms, int n
     }
 
     printf("Generated %d rooms (out of max %d) in %d attempts\n", rooms->numrooms, ctx->maxnumrooms, i);
+}
+
+
+static void jc_roommaker_make_mazes(SRoomMakerContext* ctx, SRooms* rooms)
+{
+    // loop through all pixels
+    uint16_t width = rooms->dimensions[0];
+    uint16_t height = rooms->dimensions[1];
+    // 0 = E, 1 = N, 2 = W, 3 = S
+    int16_t xoffsets[] = {2, 0, -2, 0};
+    int16_t yoffsets[] = {0, -2, 0, 2};
+    for( uint16_t cy = 0; cy < rooms->dimensions[1]; cy += 2 )
+    {
+        for( uint16_t cx = 0; cx < rooms->dimensions[0]; cx += 2 )
+        {
+            uint16_t index = cy * width + cx;
+            if( rooms->grid[index] )
+                continue;
+
+            // We've got a start cell!
+            uint16_t stack[256];
+            int num_branches;
+
+            uint16_t endpoints[256];
+            uint16_t numendpoints = 0;
+
+            endpoints[0] = index;
+            numendpoints = 1;
+
+            uint16_t id = rooms->nextid++;
+
+            rooms->grid[index] = id;
+            int currentx = cx;
+            int currenty = cy;
+            while( true )
+            {
+
+                // 0 = E, 1 = N, 2 = W, 3 = S
+                int dir = rand() % 4;
+                int nextx = -1;
+                int nexty = -1;
+                for( uint16_t d = 0; d < 4; ++d )
+                {
+                    int dd = (dir+d)%4;
+                    int testx = cx + xoffsets[dd];
+                    int testy = cy + yoffsets[dd];
+                    if( testx < 0 || testx >= width || testy < 0 || testy >= height)
+                        continue;
+
+                    int testnext = testy * width + testx;
+                    if( rooms->grid[testnext] == 0 )
+                    {
+                        nextx = testx;
+                        nexty = testy;
+                        dir = dd;
+                        break;
+                    }
+                }
+
+                if( nextx == -1 )
+                    break;
+
+                rooms->grid[nexty * width + nextx] = id;
+                rooms->grid[(currenty + nexty)/2 * width + (currentx + nextx)/2] = id;
+            }
+
+        }
+    }
+
+    printf("id: %d\n", rooms->nextid);
 }
 
 #endif // JC_ROOMMAKER_IMPLEMENTATION
