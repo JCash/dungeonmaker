@@ -82,15 +82,22 @@ static inline uint16_t jc_roommaker_max(uint16_t a, uint16_t b)
     return a > b ? a : b;
 }
 
-static bool jc_roommaker_is_overlapping(uint16_t aleft, uint16_t atop, uint16_t aright, uint16_t abottom, uint16_t bleft, uint16_t btop, uint16_t bright, uint16_t bbottom)
+static inline uint16_t jc_roommaker_min(uint16_t a, uint16_t b)
 {
-    /*
-    printf("NEW: %d, %d, %d, %d\n", aleft, atop, aright, abottom);
-    printf("OLD: %d, %d, %d, %d\n", bleft, btop, bright, bbottom);
-    printf("  aleft > bright = %d, %d -> %d\n", aleft, bright, aleft > bright);
-    printf("  aright < bleft = %d, %d -> %d\n", aright, bleft, aright < bleft);
-    printf("  atop > bbottom = %d, %d -> %d\n", atop, bbottom, atop > bbottom);
-    printf("  abottom < btop = %d, %d -> %d\n", abottom, btop, abottom < btop);*/
+    return a < b ? a : b;
+}
+
+static bool jc_roommaker_is_overlapping(uint16_t aleft, uint16_t atop, uint16_t aright, uint16_t abottom, uint16_t bleft, uint16_t btop, uint16_t bright, uint16_t bbottom, int debug)
+{
+	if(debug)
+	{
+		printf("A: %d, %d, %d, %d\n", aleft, atop, aright, abottom);
+		printf("B: %d, %d, %d, %d\n", bleft, btop, bright, bbottom);
+		printf("  aleft > bright = %d, %d -> %d\n", aleft, bright, aleft > bright);
+		printf("  aright < bleft = %d, %d -> %d\n", aright, bleft, aright < bleft);
+		printf("  atop > bbottom = %d, %d -> %d\n", atop, bbottom, atop > bbottom);
+		printf("  abottom < btop = %d, %d -> %d\n", abottom, btop, abottom < btop);
+	}
     return !(aleft > bright || aright < bleft || atop > bbottom || abottom < btop);
 }
 
@@ -98,10 +105,21 @@ static bool jc_roommaker_is_overlapping(const SRooms* rooms, uint16_t x, uint16_
 {
     uint16_t x2 = x + width - 1;
     uint16_t y2 = y + height - 1;
+    // Grow the current room by 2, and the others by one
+    // thus leaving a space of at least 3 cells between rooms
+    x = x < 2 ? 0 : x - 2;
+    y = y < 2 ? 0 : y - 2;
+    x2 = x2 + 2;
+    y2 = y2 + 2;
+    int extra = 1;
     for( int i = 0; i < rooms->numrooms; ++i )
     {
         const SRoom* room = &rooms->rooms[i];
-        if( jc_roommaker_is_overlapping(x, y, x2, y2, room->pos[0], room->pos[1], room->pos[0] + room->dims[0] - 1, room->pos[1] + room->dims[1] - 1) )
+        uint16_t bx = room->pos[0] < extra ? 0 : room->pos[0] - extra;
+        uint16_t by = room->pos[1] < extra ? 0 : room->pos[1] - extra;
+        uint16_t bx2 = room->pos[0] + room->dims[0] - 1 + extra;
+        uint16_t by2 = room->pos[1] + room->dims[1] - 1 + extra;
+        if( jc_roommaker_is_overlapping(x, y, x2, y2, bx, by, bx2, by2, 0) )
             return true;
     }
     return false;
@@ -127,10 +145,24 @@ static void jc_roommaker_make_rooms(SRoomMakerContext* ctx, SRooms* rooms, int n
         width = jc_roommaker_max(minroomsize, width);
         height = jc_roommaker_max(minroomsize, height);
 
+        float userratio = 0.5f; // 0.0 <-> 1.0
+        float ratio = (float)width / (float)height;
+        if( ratio < userratio )
+        {
+        	width = (uint16_t)(height * userratio);
+        }
+        ratio = (float)height / (float)width;
+        if( ratio < userratio )
+        {
+        	height = (uint16_t)(width * userratio);
+        }
+
+        // If the room exceeds the bounds of the area
         if( posx + width > ctx->dimensions[0] )
             width = ctx->dimensions[0] - posx;
         if( posy + height > ctx->dimensions[1] )
             height = ctx->dimensions[1] - posy;
+
         if( width < minroomsize || height < minroomsize )
             continue;
 
