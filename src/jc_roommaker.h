@@ -207,6 +207,8 @@ static void jc_roommaker_make_mazes(SRoomMakerContext* ctx, SRooms* rooms)
     // 0 = E, 1 = N, 2 = W, 3 = S
     int16_t xoffsets[] = {2, 0, -2, 0};
     int16_t yoffsets[] = {0, -2, 0, 2};
+
+    int count = 0;
     for( uint16_t cy = 0; cy < rooms->dimensions[1]; cy += 2 )
     {
         for( uint16_t cx = 0; cx < rooms->dimensions[0]; cx += 2 )
@@ -227,6 +229,8 @@ static void jc_roommaker_make_mazes(SRoomMakerContext* ctx, SRooms* rooms)
 
             uint16_t id = rooms->nextid++;
 
+            ++count;
+
             rooms->grid[index] = id;
             int currentx = cx;
             int currenty = cy;
@@ -240,8 +244,8 @@ static void jc_roommaker_make_mazes(SRoomMakerContext* ctx, SRooms* rooms)
                 for( uint16_t d = 0; d < 4; ++d )
                 {
                     int dd = (dir+d)%4;
-                    int testx = cx + xoffsets[dd];
-                    int testy = cy + yoffsets[dd];
+                    int testx = currentx + xoffsets[dd];
+                    int testy = currenty + yoffsets[dd];
                     if( testx < 0 || testx >= width || testy < 0 || testy >= height)
                         continue;
 
@@ -260,8 +264,13 @@ static void jc_roommaker_make_mazes(SRoomMakerContext* ctx, SRooms* rooms)
 
                 rooms->grid[nexty * width + nextx] = id;
                 rooms->grid[(currenty + nexty)/2 * width + (currentx + nextx)/2] = id;
+
+                currentx = nextx;
+                currenty = nexty;
             }
 
+            //if( count )
+            //    return;
         }
     }
 
