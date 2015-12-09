@@ -222,29 +222,51 @@ static void jc_roommaker_make_mazes(SRoomMakerContext* ctx, SRooms* rooms)
                 continue;
 
             // We've got a start cell!
-            uint16_t stack[256];
-            int num_branches;
+            int nextstack[100000];
+            int prevstack[100000];
+            int stacksize = 0;
+            nextstack[stacksize] = index;
+            prevstack[stacksize] = -1;
+            stacksize++;
 
-            uint16_t endpoints[256];
-            uint16_t numendpoints = 0;
+            int endpoints[256];
+            int numendpoints = 0;
 
-            endpoints[0] = index;
-            numendpoints = 1;
+            endpoints[numendpoints++] = index;
 
             uint16_t id = rooms->nextid++;
 
             ++count;
 
-            rooms->grid[index] = id;
-            int currentx = cx;
-            int currenty = cy;
-            while( true )
+            int prevx = -1;
+            int prevy = -1;
+            while( stacksize )
             {
+                --stacksize;
+                int currentindex = nextstack[stacksize];
+                int previndex = prevstack[stacksize];
+                int currentx = currentindex % width;
+                int currenty = currentindex / width;
+
+                if(previndex == -1)
+                {
+                    prevx = -1;
+                    prevy = -1;
+                }
+                else
+                {
+                    prevx = previndex % width;
+                    prevy = previndex / width;
+                }
+
+                rooms->grid[currenty * width + currentx] = id;
+
+                if( prevx != -1 )
+                    rooms->grid[(currenty + prevy)/2 * width + (currentx + prevx)/2] = id;
 
                 // 0 = E, 1 = N, 2 = W, 3 = S
                 int dir = rand() % 4;
-                int nextx = -1;
-                int nexty = -1;
+                int next = -1;
                 for( uint16_t d = 0; d < 4; ++d )
                 {
                     int dd = (dir+d)%4;
@@ -256,25 +278,25 @@ static void jc_roommaker_make_mazes(SRoomMakerContext* ctx, SRooms* rooms)
                     int testnext = testy * width + testx;
                     if( rooms->grid[testnext] == 0 )
                     {
-                        nextx = testx;
-                        nexty = testy;
-                        dir = dd;
-                        break;
+                        next = testnext;
+                        nextstack[stacksize] = testnext;
+                        prevstack[stacksize] = currentindex;
+                        stacksize++;
                     }
                 }
 
-                if( nextx == -1 )
-                    break;
+                if( next == -1 )
+                {
+                    // Nowhere to go
+                    index = currenty * width + currentx;
+                    endpoints[numendpoints++] = index;
+                }
 
-                rooms->grid[nexty * width + nextx] = id;
-                rooms->grid[(currenty + nexty)/2 * width + (currentx + nextx)/2] = id;
-
-                currentx = nextx;
-                currenty = nexty;
+                printf("stacksize: %d\n", stacksize);
             }
 
-            //if( count )
-            //    return;
+            if( count )
+                return;
         }
     }
 
