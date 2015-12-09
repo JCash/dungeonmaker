@@ -157,12 +157,12 @@ static void jc_roommaker_make_rooms(SRoomMakerContext* ctx, SRooms* rooms, int n
         float ratio = (float)width / (float)height;
         if( ratio < userratio )
         {
-        	width = (uint16_t)(height * userratio);
+        	width = (uint16_t)(height * userratio) | 0x1;
         }
         ratio = (float)height / (float)width;
         if( ratio < userratio )
         {
-        	height = (uint16_t)(width * userratio);
+        	height = (uint16_t)(width * userratio) | 0x1;
         }
 
         // If the room exceeds the bounds of the area
@@ -238,31 +238,33 @@ static void jc_roommaker_make_mazes(SRoomMakerContext* ctx, SRooms* rooms)
 
             ++count;
 
-            int prevx = -1;
-            int prevy = -1;
             while( stacksize )
             {
                 --stacksize;
                 int currentindex = nextstack[stacksize];
                 int previndex = prevstack[stacksize];
-                int currentx = currentindex % width;
-                int currenty = currentindex / width;
+                const int currentx = currentindex % width;
+                const int currenty = currentindex / width;
 
-                if(previndex == -1)
+                const int prevx = previndex != -1 ? previndex % width : -1;
+                const int prevy = previndex != -1 ? previndex / width : -1;
+
+                int fillindex = currenty * width + currentx;
+                if( rooms->grid[fillindex] == 0 )
                 {
-                    prevx = -1;
-                    prevy = -1;
+                	rooms->grid[fillindex] = id;
                 }
                 else
                 {
-                    prevx = previndex % width;
-                    prevy = previndex / width;
+                	continue;
                 }
 
-                rooms->grid[currenty * width + currentx] = id;
-
                 if( prevx != -1 )
-                    rooms->grid[(currenty + prevy)/2 * width + (currentx + prevx)/2] = id;
+                {
+                	fillindex = (currenty + prevy)/2 * width + (currentx + prevx)/2;
+                	if( rooms->grid[fillindex] == 0 )
+                		rooms->grid[fillindex] = id;
+                }
 
                 // 0 = E, 1 = N, 2 = W, 3 = S
                 int dir = rand() % 4;
@@ -292,7 +294,7 @@ static void jc_roommaker_make_mazes(SRoomMakerContext* ctx, SRooms* rooms)
                     endpoints[numendpoints++] = index;
                 }
 
-                printf("stacksize: %d\n", stacksize);
+                //printf("stacksize: %d\n", stacksize);
             }
 
             if( count )
