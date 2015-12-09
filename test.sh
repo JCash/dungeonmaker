@@ -1,4 +1,4 @@
 set -e
 ./compile_clang.sh
-./main
+./build/darwin/main
 

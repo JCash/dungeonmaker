@@ -137,17 +137,21 @@ static void jc_roommaker_make_rooms(SRoomMakerContext* ctx, SRooms* rooms, int n
     srand(ctx->seed);
 
     uint16_t minroomsize = 3;
-    uint16_t roomsize = 20;
+    uint16_t roomsize = 20 - minroomsize;
 
     int i = 0;
     for( ; i < numattempts && rooms->numrooms < ctx->maxnumrooms; ++i)
     {
         uint16_t posx = (uint16_t)( jc_roommaker_rand01() * (ctx->dimensions[0] - 1));
         uint16_t posy = (uint16_t)(jc_roommaker_rand01() * (ctx->dimensions[1] - 1));
-        uint16_t width = (uint16_t)(jc_roommaker_rand01() * roomsize);
-        uint16_t height = (uint16_t)(jc_roommaker_rand01() * roomsize);
-        width = jc_roommaker_max(minroomsize, width);
-        height = jc_roommaker_max(minroomsize, height);
+        uint16_t width = (uint16_t)(minroomsize + jc_roommaker_rand01() * roomsize);
+        uint16_t height = (uint16_t)(minroomsize + jc_roommaker_rand01() * roomsize);
+        // Align them on even positions
+        posx  &= ~0x1;
+        posy  &= ~0x1;
+        // Make them odd sizes
+        width = jc_roommaker_max(minroomsize, width | 0x1);
+        height = jc_roommaker_max(minroomsize, height | 0x1);
 
         float userratio = 0.5f; // 0.0 <-> 1.0
         float ratio = (float)width / (float)height;

@@ -1,11 +1,11 @@
 
 #include <math.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <sys/time.h>
 
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-
+#include "external/stblib.h"
 
 #define JC_ROOMMAKER_IMPLEMENTATION
 #include "jc_roommaker.h"
@@ -144,7 +144,7 @@ int main(int argc, const char** argv)
 
     char path[512];
     sprintf(path, "%s", outputfile);
-    stbi_write_png(path, image.width, image.height, image.channels, image.bytes, image.width*image.channels);
+    stblib_write_png(path, image.width, image.height, image.channels, image.bytes, image.width*image.channels);
     printf("wrote %s (%d x %d x %d)\n", path, image.width, image.height, image.channels);
 
     free(image.bytes);
