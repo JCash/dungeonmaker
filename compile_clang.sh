@@ -1,6 +1,6 @@
 PWD=`pwd`
 BUILDDIR=$PWD/build/darwin
-CXXFLAGS="-g -O0 -m64 -stdlib=libc++ -Wall -Weverything -pedantic"
+CXXFLAGS="-g -O0 -m64 -stdlib=libc++ -Wall -Weverything -pedantic -Wno-old-style-cast"
 LDFLAGS=""
 COMPILER=clang++
 LINKER=libtool
