@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <sys/time.h>
 
 #include "external/stblib.h"
 
@@ -20,38 +19,6 @@ static int mask_height = 0;
 static int mask_channels 	= 0;
 static unsigned char* mask_image = 0;
 
-class Timer {
-private:
-
-    timeval startTime;
-
-public:
-
-    void start(){
-        gettimeofday(&startTime, NULL);
-    }
-
-    double stop(){
-        timeval endTime;
-        long seconds, useconds;
-        double duration;
-
-        gettimeofday(&endTime, NULL);
-
-        seconds  = endTime.tv_sec  - startTime.tv_sec;
-        useconds = endTime.tv_usec - startTime.tv_usec;
-
-        duration = seconds + useconds/1000000.0;
-
-        return duration;
-    }
-
-    static void printTime(double duration){
-        printf("%5.6f seconds\n", duration);
-    }
-};
-
-
 struct SImage
 {
     int             width;
@@ -61,6 +28,7 @@ struct SImage
     unsigned char*  bytes;
 };
 
+/*
 static bool accept_room(int x, int y, int w, int h, void* ctx)
 {
 	int xx = x + w / 2;
@@ -86,14 +54,14 @@ static bool accept_room(int x, int y, int w, int h, void* ctx)
 		return false;
 	return true;
 }
-
+*/
 static void render_rooms(const SRooms* rooms, SImage* image)
 {
     const uint8_t color_door[3] = { 170, 170, 100 };
     const uint8_t color_maze[3] = { 127, 127, 127 };
 
-    uint8_t colors[256*3] = { 0,0,0 };
-    for( int i = 1; i < 256; ++i)
+    uint8_t colors[256*3];
+    for( int i = 0; i < 256; ++i)
     {
         int index = i * 3;
         colors[index + 0] = 60 + (uint8_t)(jc_roommaker_rand01() * 120);
@@ -108,7 +76,19 @@ static void render_rooms(const SRooms* rooms, SImage* image)
             int index = (y * PIXELS_PER_ROOM) * image->width * image->channels + (x * PIXELS_PER_ROOM) * image->channels;
 
             int roomid = rooms->grid[y * rooms->dimensions[0] + x];
-            if( roomid < rooms->mazeid_start )
+            if( roomid == 0 )
+            {
+            	image->bytes[index+0] = 0;
+            	image->bytes[index+1] = 0;
+            	image->bytes[index+2] = 0;
+            }
+            else if( roomid == rooms->doorid )
+            {
+                image->bytes[index+0] = color_door[0];
+                image->bytes[index+1] = color_door[1];
+                image->bytes[index+2] = color_door[2];
+            }
+            else if( roomid < rooms->mazeid_start )
             {
 				roomid = roomid % 256;
 				image->bytes[index+0] = colors[roomid*3 + 0];
@@ -123,25 +103,9 @@ static void render_rooms(const SRooms* rooms, SImage* image)
             }
         }
     }
-
-
-    for( int i = 0; i < rooms->numrooms; ++i )
-    {
-    	const SRoom* room = &rooms->rooms[i];
-    	for( int d = 0; d < room->numdoors; ++d )
-    	{
-    		int x = room->doors[d] % rooms->dimensions[0];
-    		int y = room->doors[d] / rooms->dimensions[0];
-
-            int index = (y * PIXELS_PER_ROOM) * image->width * image->channels + (x * PIXELS_PER_ROOM) * image->channels;
-
-            image->bytes[index+0] = color_door[0];
-            image->bytes[index+1] = color_door[1];
-            image->bytes[index+2] = color_door[2];
-    	}
-    }
 }
 
+/*
 static inline int clamp(int v, int a, int b)
 {
 	return v < a ? a : (v > b ? b : v);
@@ -240,7 +204,7 @@ static void render_rooms_mask(const SRooms* rooms, SImage* image)
     	}
     }
 }
-
+*/
 
 
 
@@ -251,7 +215,7 @@ int main(int argc, const char** argv)
     SRoomMakerContext roomctx;
     roomctx.dimensions[0]   = NUMCELLS;
     roomctx.dimensions[1]   = NUMCELLS;
-    roomctx.maxnumrooms     = (int)sqrtf(NUMCELLS) * 40;
+    roomctx.maxnumrooms     = (int)sqrtf(NUMCELLS) * 20;
     roomctx.seed            = 0;
 
     //roomctx.room_accept = accept_room;
@@ -272,12 +236,13 @@ int main(int argc, const char** argv)
     printf("Dims: %d, %d\n", roomctx.dimensions[0], roomctx.dimensions[1]);
     printf("Seed: 0x%08x\n", roomctx.seed);
 
-    Timer timer;
-    timer.start();
-    SRooms* rooms = jc_roommaker_create(&roomctx);
-    double elapsed = timer.stop();
+    SRooms* rooms = 0;
+    {
+		TimerScope timer("Dungeon generation");
+		rooms = jc_roommaker_create(&roomctx);
+    }
 
-    printf("Dungeon generated in %f ms\n", elapsed*1000.0f);
+    printf("Generated %d rooms (out of max %d)\n", rooms->numrooms, roomctx.maxnumrooms);
 
     SImage image;
     image.width     = IMAGEDIMS;
