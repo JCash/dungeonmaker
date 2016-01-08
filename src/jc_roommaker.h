@@ -10,6 +10,9 @@
 #include <vector>
 #include <sys/time.h>
 
+#define JC_VORONOI_IMPLEMENTATION
+#include "jc_voronoi.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -22,6 +25,8 @@ typedef int8_t		i8;
 typedef int16_t		i16;
 typedef int32_t		i32;
 typedef int64_t		i64;
+typedef float       f32;
+typedef double      f64;
 
 
 struct SCoord
@@ -109,6 +114,7 @@ static i32 yoffsets[] = {0, -1, 0, 1};
 
 static void jc_roommaker_make_rooms_random(SRoomMakerContext* ctx, SRooms* rooms, i32 numattempts);
 static void jc_roommaker_make_rooms_bsp(SRoomMakerContext* ctx, SRooms* rooms);
+static void jc_roommaker_make_rooms_voronoi(SRoomMakerContext* ctx, SRooms* rooms);
 static void jc_roommaker_make_mazes(SRoomMakerContext* ctx, SRooms* rooms);
 static void jc_roommaker_find_doors(SRoomMakerContext* ctx, SRooms* rooms);
 static void jc_roommaker_remove_dead_ends(SRoomMakerContext* ctx, SRooms* rooms);
@@ -128,13 +134,20 @@ SRooms* jc_roommaker_create(SRoomMakerContext* ctx)
 
     memset(rooms->grid, 0, sizeof(int) * (size_t)(ctx->dimensions[0] * ctx->dimensions[1]) );
 
+    if(false)
     {
-    	//TimerScope timer("make_rooms_random");
-    	//jc_roommaker_make_rooms_random(ctx, rooms, 1000);
+    	TimerScope timer("make_rooms_random");
+    	jc_roommaker_make_rooms_random(ctx, rooms, 1000);
     }
+    if(false)
     {
     	TimerScope timer("make_rooms_bsp");
     	jc_roommaker_make_rooms_bsp(ctx, rooms);
+    }
+    if(true)
+    {
+        TimerScope timer("make_rooms_voronoi");
+        jc_roommaker_make_rooms_voronoi(ctx, rooms);
     }
     {
 		TimerScope timer("make_mazes");
@@ -473,6 +486,111 @@ static void jc_roommaker_make_rooms_bsp(SRoomMakerContext* ctx, SRooms* rooms)
 
         jc_roommaker_draw_room(rooms, room);
 	}
+}
+
+static void jc_roommaker_make_rooms_voronoi(SRoomMakerContext* ctx, SRooms* rooms)
+{
+    i32 edgeoffset = 3;
+    i32 width = rooms->dimensions[0];
+    i32 height = rooms->dimensions[1];
+    i32 width_inner = width - edgeoffset*2;
+    i32 height_inner = height - edgeoffset*2;
+
+    std::vector<jcv_point> points;
+    points.resize(ctx->maxnumrooms);
+
+    for( int i = 0; i < ctx->maxnumrooms; ++i )
+    {
+        points[i].x = jc_roommaker_rand01() * width_inner + edgeoffset;
+        points[i].y = jc_roommaker_rand01() * height_inner + edgeoffset;
+    }
+
+    jcv_diagram diagram;
+    memset(&diagram, 0, sizeof(jcv_diagram));
+    jcv_diagram_generate((i32)points.size(), (const jcv_point*)&points[0], width, height, &diagram);
+
+    const jcv_site* sites = jcv_diagram_get_sites(&diagram);
+    for( int i = 0; i < diagram.numsites; ++i )
+    {
+        const jcv_site* site = &sites[i];
+        jcv_point sum = site->p;
+        int count = 1;
+
+        const jcv_graphedge* edge = site->edges;
+
+        f32 minx = width + 1;
+        f32 maxx = -1;
+        f32 miny = height + 1;
+        f32 maxy = -1;
+        while( edge )
+        {
+            const jcv_point& pos = edge->pos[0];
+            sum.x += pos.x;
+            sum.y += pos.y;
+            ++count;
+            edge = edge->next;
+
+            minx = minx <= pos.x ? minx : pos.x;
+            maxx = maxx >= pos.x ? maxx : pos.x;
+            miny = miny <= pos.y ? miny : pos.y;
+            maxy = maxy >= pos.y ? maxy : pos.y;
+        }
+
+        f32 fx = sum.x / count;
+        f32 fy = sum.y / count;
+
+        f32 shrink = 0.5f;
+        //f32 area = (maxx - minx) * (maxy - miny);
+        //f32 sideratio = (maxx - minx) / (maxy - miny);
+        //f32 side = sqrtf(area);
+        f32 fw = (maxx - minx) * shrink;
+        f32 fh = (maxy - miny) * shrink;
+
+        i32 x = (i32)fx;
+        i32 y = (i32)fy;
+        i32 w = (i32)fw;
+        i32 h = (i32)fh;
+        jc_roommaker_adjust_pos_and_dims(ctx, x, y, w, h);
+
+        int everyother = 0;
+        while( jc_roommaker_is_overlapping(rooms, x, y, w, h) && w >= 5 && h >= 5 )
+        {
+            if( everyother )
+            {
+                if( w > h )
+                    x += 2;
+                else
+                    y += 2;
+            }
+
+            if( w > h )
+                w -= 2;
+            else
+                h -= 2;
+
+            everyother = (everyother+1) & 0x1;
+        }
+
+        if( jc_roommaker_is_overlapping(rooms, x, y, w, h) )
+        {
+            //printf("DISCARDED room %d: %d, %d   w, h: %d, %d   overlapping: %d\n", i, x, y, w, h, jc_roommaker_is_overlapping(rooms, x, y, w, h) ? 1 : 0 );
+            continue;
+        }
+
+        //printf("room %d: %d, %d   w, h: %d, %d   overlapping: %d\n", i, x, y, w, h, jc_roommaker_is_overlapping(rooms, x, y, w, h) ? 1 : 0 );
+
+
+        SRoom* room = &rooms->rooms[rooms->numrooms];
+        memset(room, 0, sizeof(SRoom));
+        room->id        = (u16)++rooms->nextid;
+        room->pos[0]    = (i16)x;
+        room->pos[1]    = (i16)y;
+        room->dims[0]   = (i16)w;
+        room->dims[1]   = (i16)h;
+        ++rooms->numrooms;
+
+        jc_roommaker_draw_room(rooms, room);
+    }
 }
 
 
