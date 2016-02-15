@@ -115,6 +115,7 @@ static i32 yoffsets[] = {0, -1, 0, 1};
 static void jc_roommaker_make_rooms_random(SRoomMakerContext* ctx, SRooms* rooms, i32 numattempts);
 static void jc_roommaker_make_rooms_bsp(SRoomMakerContext* ctx, SRooms* rooms);
 static void jc_roommaker_make_rooms_voronoi(SRoomMakerContext* ctx, SRooms* rooms);
+static void jc_roommaker_make_rooms_islands(SRoomMakerContext* ctx, SRooms* rooms);
 static void jc_roommaker_make_mazes(SRoomMakerContext* ctx, SRooms* rooms);
 static void jc_roommaker_find_doors(SRoomMakerContext* ctx, SRooms* rooms);
 static void jc_roommaker_remove_dead_ends(SRoomMakerContext* ctx, SRooms* rooms);
@@ -134,6 +135,9 @@ SRooms* jc_roommaker_create(SRoomMakerContext* ctx)
 
     memset(rooms->grid, 0, sizeof(int) * (size_t)(ctx->dimensions[0] * ctx->dimensions[1]) );
 
+
+    //ctx->maxnumrooms = 150;
+
     if(false)
     {
     	TimerScope timer("make_rooms_random");
@@ -144,15 +148,22 @@ SRooms* jc_roommaker_create(SRoomMakerContext* ctx)
     	TimerScope timer("make_rooms_bsp");
     	jc_roommaker_make_rooms_bsp(ctx, rooms);
     }
-    if(true)
+    if(false)
     {
         TimerScope timer("make_rooms_voronoi");
         jc_roommaker_make_rooms_voronoi(ctx, rooms);
+    }
+    if(true)
+    {
+        TimerScope timer("make_rooms_islands");
+        jc_roommaker_make_rooms_islands(ctx, rooms);
     }
     {
 		TimerScope timer("make_mazes");
 		jc_roommaker_make_mazes(ctx, rooms);
     }
+
+    //return rooms;
     {
     	TimerScope timer("find_doors");
     	jc_roommaker_find_doors(ctx, rooms);
@@ -234,10 +245,28 @@ static bool jc_roommaker_is_overlapping(const SRooms* rooms, i32 x, i32 y, i32 w
     return false;
 }
 
+static bool jc_roommaker_is_overlapping_tight(const SRooms* rooms, i32 x, i32 y, i32 width, i32 height)
+{
+    i32 x2 = x + width - 1;
+    i32 y2 = y + height - 1;
+    for( i32 i = 0; i < rooms->numrooms; ++i )
+    {
+        const SRoom* room = &rooms->rooms[i];
+        i32 bx = room->pos[0];
+        i32 by = room->pos[1];
+        i32 bx2 = room->pos[0] + room->dims[0] - 1;
+        i32 by2 = room->pos[1] + room->dims[1] - 1;
+        if( jc_roommaker_is_overlapping(x, y, x2, y2, bx, by, bx2, by2, 0) )
+            return true;
+    }
+    return false;
+}
+
+
 
 static inline void jc_roommaker_draw_room(SRooms* rooms, const SRoom* room)
 {
-    //printf("room: %d   x, y: %d, %d   w, h: %d, %d\n", room->id, room->pos[0], room->pos[1], room->dims[0], room->dims[1]);
+    printf("ROOM: %d   x, y: %d, %d   w, h: %d, %d\n", room->id, room->pos[0], room->pos[1], room->dims[0], room->dims[1]);
 
     for( int y = room->pos[1]; y < (room->pos[1] + room->dims[1]) && y < rooms->dimensions[1]; ++y)
     {
@@ -962,6 +991,194 @@ static void jc_roommaker_find_doors(SRoomMakerContext* ctx, SRooms* rooms)
 
 			rooms->grid[doorindex] = 0;
     	}
+    }
+}
+
+static inline bool _jc_roommaker_find_nextpos(SRoomMakerContext* ctx, const SRooms* rooms, i32 x, i32 y, i32 w, i32 h, int dir, i32* outx, i32* outy)
+{
+    const i32 width = rooms->dimensions[0];
+    const i32 height = rooms->dimensions[1];
+
+
+    printf("   Find next pos:   %d, %d  %d, %d  dir: %d\n", x, y, w, h, dir);
+
+    for(;;)
+    {
+        printf("     loop: %d, %d\n", x, y);
+        if( rooms->grid[y * width + x] == 0 )
+        {
+            printf("    found: %d, %d\n", x, y);
+            *outx = x;
+            *outy = y;
+            return true;
+        }
+
+        // TODO: Fix nicer algorithm (bresenham?)
+        switch( dir )
+        {
+        case 0: x -= 2; y -= 2; break;
+        case 1: x += 0; y -= 2; break;
+        case 2: x += 2; y -= 2; break;
+        case 3: x -= 2; y += 0; break;
+        case 4: x += 2; y += 0; break;
+        case 5: x -= 2; y += 2; break;
+        case 6: x += 0; y += 2; break;
+        case 7: x += 2; y += 2; break;
+        }
+
+        if( x < 0 || y < 0 || (x+w) >= width || (y+h) >= height )
+        {
+            printf("Out of bounds\n");
+            return false;
+        }
+
+    }
+
+    return false;
+}
+
+static bool _jc_roommaker_grow(SRoomMakerContext* ctx, const SRooms* rooms, i32 x, i32 y, i32 w, i32 h, i32 minroomsize, i32 dir, i32* outx, i32* outy, i32* outw, i32* outh)
+{
+    i32 width = rooms->dimensions[0];
+    i32 height = rooms->dimensions[1];
+
+    while( w > 1 && h > 1 )
+    {
+        printf("   grow: %d, %d  %d, %d   %d\n", x, y, w, h, minroomsize);
+
+        if( !jc_roommaker_is_overlapping_tight(rooms, x, y, w, h) )
+        {
+            *outx = x;
+            *outy = y;
+            *outw = w;
+            *outh = h;
+
+            return true;
+        }
+
+        switch( dir )
+        {
+        case 0: x -= 2; y -= 2; break;
+        case 1: x += 0; y -= 2; break;
+        case 2: x += 0; y -= 2; break;
+        case 3: x -= 2; y += 0; break;
+        case 4: x += 0; y += 0; break;
+        case 5: x -= 2; y += 2; break;
+        case 6: x += 0; y += 2; break;
+        case 7: x += 0; y += 2; break;
+        }
+
+        if( x < 0 || y < 0 || x >= width || y >= height )
+            return false;
+
+        w -= 2;
+        h -= 2;
+
+        if( w < minroomsize || h < minroomsize )
+            return false;
+
+        jc_roommaker_adjust_pos_and_dims(ctx, x, y, w, h);
+    }
+    return false;
+}
+
+
+static void jc_roommaker_make_rooms_islands(SRoomMakerContext* ctx, SRooms* rooms)
+{
+    srand(ctx->seed);
+
+    u16 minroomsize = 3;
+    u16 roomsize = 20 - minroomsize;
+
+    i32 width = rooms->dimensions[0];
+    i32 height = rooms->dimensions[1];
+
+    std::vector<SCoord> islands;
+
+    i32 numislands = 5;
+    for( int i = 0; i < numislands; ++i )
+    {
+        i32 w = (i32)(minroomsize + jc_roommaker_rand01() * roomsize);
+        i32 h = (i32)(minroomsize + jc_roommaker_rand01() * roomsize);
+
+        printf("rand  w/h: %d, %d\n", w, h);
+
+        // random direction
+        i32 dir = (i32)(jc_roommaker_rand01() * 8) % 8;
+
+        i32 posx = (i32)(jc_roommaker_rand01() * (ctx->dimensions[0] - 1));
+        i32 posy = (i32)(jc_roommaker_rand01() * (ctx->dimensions[1] - 1));
+
+        jc_roommaker_adjust_pos_and_dims(ctx, posx, posy, w, h);
+
+        while( !_jc_roommaker_find_nextpos(ctx, rooms, posx, posy, w, h, dir, &posx, &posy) )
+        {
+            posx = (i32)( jc_roommaker_rand01() * (ctx->dimensions[0] - 1));
+            posy = (i32)(jc_roommaker_rand01() * (ctx->dimensions[1] - 1));
+        }
+
+        if( _jc_roommaker_grow(ctx, rooms, posx, posy, w, h, minroomsize, dir, &posx, &posy, &w, &h) )
+        {
+            printf("grew x/y: %d, %d  w/h: %d, %d\n", posx, posy, w, h);
+            SRoom* room = &rooms->rooms[rooms->numrooms];
+            memset(room, 0, sizeof(SRoom));
+            room->id        = (u16)++rooms->nextid;
+            room->pos[0]    = (i16)posx;
+            room->pos[1]    = (i16)posy;
+            room->dims[0]   = (i16)w;
+            room->dims[1]   = (i16)h;
+            ++rooms->numrooms;
+
+            jc_roommaker_draw_room(rooms, room);
+
+            SCoord c = { (u16)posx, (u16)posy };
+            islands.push_back( c );
+        }
+    }
+
+    for( int i = (int)islands.size(); i < ctx->maxnumrooms; ++i )
+    {
+        i32 w = (i32)(minroomsize + jc_roommaker_rand01() * roomsize);
+        i32 h = (i32)(minroomsize + jc_roommaker_rand01() * roomsize);
+
+        i32 island = i % islands.size();
+        SCoord& c = islands[ island ];
+        i32 posx = c.x;
+        i32 posy = c.y;
+
+        // random direction
+        i32 dir = (i32)(jc_roommaker_rand01() * 8) % 8;
+
+        if( !_jc_roommaker_find_nextpos(ctx, rooms, posx, posy, w, h, dir, &posx, &posy) )
+        {
+            printf("skipped!\n");
+            continue;
+        }
+
+        printf("  %d  Next pos:   %d, %d  %d, %d\n", i, posx, posy, w, h);
+
+        if( _jc_roommaker_grow(ctx, rooms, posx, posy, w, h, minroomsize, dir, &posx, &posy, &w, &h) )
+        {
+            //printf("grew x/y: %d, %d  w/h: %d, %d\n", posx, posy, w, h);
+            SRoom* room = &rooms->rooms[rooms->numrooms];
+            memset(room, 0, sizeof(SRoom));
+            room->id        = (u16)++rooms->nextid;
+            room->pos[0]    = (i16)posx;
+            room->pos[1]    = (i16)posy;
+            room->dims[0]   = (i16)w;
+            room->dims[1]   = (i16)h;
+            ++rooms->numrooms;
+
+            jc_roommaker_draw_room(rooms, room);
+
+            // pop one, add another
+            if( jc_roommaker_rand01() < 0.30f )
+            {
+                SCoord c = { (u16)posx, (u16)posy };
+                islands.erase( islands.begin() + island );
+                islands.push_back( c );
+            }
+        }
     }
 }
 
