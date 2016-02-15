@@ -994,6 +994,64 @@ static void jc_roommaker_find_doors(SRoomMakerContext* ctx, SRooms* rooms)
     }
 }
 
+// A bresenham algorithm
+static inline bool _jc_roommaker_find_nextpos2(const SRooms* rooms, i32 x0, i32 y0, i32 x1, i32 y1, i32* outx, i32* outy)
+{
+    const i32 width = rooms->dimensions[0];
+
+    int dx = abs(x1-x0), sx = x0<x1 ? 1 : -1;
+    int dy = abs(y1-y0), sy = y0<y1 ? 1 : -1;
+    int err = dx-dy, e2, x2; /* error value e_xy */
+    int ed = dx+dy == 0 ? 1 : sqrt((float)dx*dx+(float)dy*dy);
+
+    for (;; )
+    {
+        //perpixel(x0, y0, 255*abs(err-dx+dy)/ed);
+        if( rooms->grid[y0 * width + x0] == 0 )
+        {
+            printf("    found: %d, %d\n", x0, y0);
+            *outx = x0;
+            *outy = y0;
+            return true;
+        }
+
+        e2 = err; x2 = x0;
+        if (2*e2 >= -dx)
+        { /* x step */
+            if (x0 == x1) break;
+            if (e2+dy < ed)
+            {
+                //perpixel(x0,y0+sy, 255*(e2+dy)/ed);
+                if( rooms->grid[(y0+sy) * width + x0] == 0 )
+                {
+                    printf("    found: %d, %d\n", x0, y0+sy);
+                    *outx = x0;
+                    *outy = y0+sy;
+                    return true;
+                }
+            }
+            err -= dy; x0 += sx;
+        }
+        if (2*e2 <= dy)
+        { /* y step */
+            if (y0 == y1) break;
+            if (dx-e2 < ed)
+            {
+                //perpixel(x2+sx,y0, 255*(dx-e2)/ed);
+                if( rooms->grid[y0 * width + x0 + sx] == 0 )
+                {
+                    printf("    found: %d, %d\n", x0+sx, y0);
+                    *outx = x0+sx;
+                    *outy = y0;
+                    return true;
+                }
+            }
+            err += dx; y0 += sy;
+        }
+    }
+    return false;
+}
+
 static inline bool _jc_roommaker_find_nextpos(SRoomMakerContext* ctx, const SRooms* rooms, i32 x, i32 y, i32 w, i32 h, int dir, i32* outx, i32* outy)
 {
     const i32 width = rooms->dimensions[0];
@@ -1104,17 +1162,57 @@ static void jc_roommaker_make_rooms_islands(SRoomMakerContext* ctx, SRooms* room
         printf("rand  w/h: %d, %d\n", w, h);
 
         // random direction
-        i32 dir = (i32)(jc_roommaker_rand01() * 8) % 8;
+        //i32 dir = (i32)(jc_roommaker_rand01() * 8) % 8;
 
         i32 posx = (i32)(jc_roommaker_rand01() * (ctx->dimensions[0] - 1));
         i32 posy = (i32)(jc_roommaker_rand01() * (ctx->dimensions[1] - 1));
 
         jc_roommaker_adjust_pos_and_dims(ctx, posx, posy, w, h);
 
+        /*
         while( !_jc_roommaker_find_nextpos(ctx, rooms, posx, posy, w, h, dir, &posx, &posy) )
         {
             posx = (i32)( jc_roommaker_rand01() * (ctx->dimensions[0] - 1));
             posy = (i32)(jc_roommaker_rand01() * (ctx->dimensions[1] - 1));
+        }*/
+
+        i32 endposx = 0;
+        i32 endposy = 0;
+        do
+        {
+            f32 r = jc_roommaker_rand01();
+            if( r < 0.5f )
+            {
+                endposx = jc_roommaker_rand01() * width;
+                endposy = jc_roommaker_rand01() < 0.5 ? 0 : height-1;
+            }
+            else
+            {
+                endposx = jc_roommaker_rand01() < 0.5 ? 0 : width-1;
+                endposy = jc_roommaker_rand01() * height;
+            }
+
+        } while( !_jc_roommaker_find_nextpos2(rooms, posx, posy, endposx, endposy, &posx, &posy) );
+
+        jc_roommaker_adjust_pos_and_dims(ctx, posx, posy, w, h);
+
+        i32 dir = 0;
+        if( endposx < posx )
+        {
+            if( endposy < posy )        dir = 0;
+            else if( endposy = posy)    dir = 3;
+            else                        dir = 5;
+        }
+        else if( endposx == posx )
+        {
+            if( endposy < posy )        dir = 1;
+            else                        dir = 6;
+        }
+        else
+        {
+            if( endposy < posy )        dir = 2;
+            else if( endposy = posy)    dir = 4;
+            else                        dir = 7;
         }
 
         if( _jc_roommaker_grow(ctx, rooms, posx, posy, w, h, minroomsize, dir, &posx, &posy, &w, &h) )
@@ -1146,6 +1244,7 @@ static void jc_roommaker_make_rooms_islands(SRoomMakerContext* ctx, SRooms* room
         i32 posx = c.x;
         i32 posy = c.y;
 
+        /*
         // random direction
         i32 dir = (i32)(jc_roommaker_rand01() * 8) % 8;
 
@@ -1153,6 +1252,45 @@ static void jc_roommaker_make_rooms_islands(SRoomMakerContext* ctx, SRooms* room
         {
             printf("skipped!\n");
             continue;
+        }
+        */
+        i32 endposx = 0;
+        i32 endposy = 0;
+        do
+        {
+            f32 r = jc_roommaker_rand01();
+            if( r < 0.5f )
+            {
+                endposx = jc_roommaker_rand01() * width;
+                endposy = jc_roommaker_rand01() < 0.5 ? 0 : height-1;
+            }
+            else
+            {
+                endposx = jc_roommaker_rand01() < 0.5 ? 0 : width-1;
+                endposy = jc_roommaker_rand01() * height;
+            }
+
+        } while( !_jc_roommaker_find_nextpos2(rooms, posx, posy, endposx, endposy, &posx, &posy) );
+
+        jc_roommaker_adjust_pos_and_dims(ctx, posx, posy, w, h);
+
+        i32 dir = 0;
+        if( endposx < posx )
+        {
+            if( endposy < posy )        dir = 0;
+            else if( endposy = posy)    dir = 3;
+            else                        dir = 5;
+        }
+        else if( endposx == posx )
+        {
+            if( endposy < posy )        dir = 1;
+            else                        dir = 6;
+        }
+        else
+        {
+            if( endposy < posy )        dir = 2;
+            else if( endposy = posy)    dir = 4;
+            else                        dir = 7;
         }
 
         printf("  %d  Next pos:   %d, %d  %d, %d\n", i, posx, posy, w, h);
