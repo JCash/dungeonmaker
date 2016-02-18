@@ -135,8 +135,7 @@ SRooms* jc_roommaker_create(SRoomMakerContext* ctx)
 
     memset(rooms->grid, 0, sizeof(int) * (size_t)(ctx->dimensions[0] * ctx->dimensions[1]) );
 
-
-    //ctx->maxnumrooms = 150;
+    //ctx->maxnumrooms = 180;
 
     if(false)
     {
@@ -163,7 +162,8 @@ SRooms* jc_roommaker_create(SRoomMakerContext* ctx)
 		jc_roommaker_make_mazes(ctx, rooms);
     }
 
-    //return rooms;
+    return rooms;
+
     {
     	TimerScope timer("find_doors");
     	jc_roommaker_find_doors(ctx, rooms);
@@ -217,6 +217,7 @@ static bool jc_roommaker_is_overlapping(i32 aleft, i32 atop, i32 aright, i32 abo
 		printf("  aright < bleft = %d, %d -> %d\n", aright, bleft, aright < bleft);
 		printf("  atop > bbottom = %d, %d -> %d\n", atop, bbottom, atop > bbottom);
 		printf("  abottom < btop = %d, %d -> %d\n", abottom, btop, abottom < btop);
+		printf("  overlapping: %d\n", (!(aleft > bright || aright < bleft || atop > bbottom || abottom < btop) ) );
 	}
     return !(aleft > bright || aright < bleft || atop > bbottom || abottom < btop);
 }
@@ -268,11 +269,43 @@ static inline void jc_roommaker_draw_room(SRooms* rooms, const SRoom* room)
 {
     printf("ROOM: %d   x, y: %d, %d   w, h: %d, %d\n", room->id, room->pos[0], room->pos[1], room->dims[0], room->dims[1]);
 
+    // Rooms must be placed on even coordinates
+    assert( (room->pos[0] & 1) == 0 );
+    assert( (room->pos[1] & 1) == 0 );
+
     for( int y = room->pos[1]; y < (room->pos[1] + room->dims[1]) && y < rooms->dimensions[1]; ++y)
     {
         for( int x = room->pos[0]; x < (room->pos[0] + room->dims[0]) && x < rooms->dimensions[0]; ++x)
         {
             rooms->grid[ y * rooms->dimensions[0] + x ] = room->id;
+        }
+    }
+}
+
+static inline void jc_roommaker_draw_room_invalidate(SRooms* rooms, i32 _x, i32 _y, i32 w, i32 h)
+{
+    printf("INVALIDATING AREA: x, y: %d, %d   w, h: %d, %d\n", _x, _y, w, h);
+
+    for( int y = _y; y < (_y + h) && y < rooms->dimensions[1]; ++y)
+    {
+        for( int x = _x; x < (_x + w) && x < rooms->dimensions[0]; ++x)
+        {
+            i32 idx = y * rooms->dimensions[0] + x;
+            if( rooms->grid[idx] == 0 )
+                rooms->grid[idx] = 255;
+        }
+    }
+}
+
+static inline void jc_roommaker_clear_invalidated_areas(SRooms* rooms)
+{
+    for( int y = 0; y < rooms->dimensions[1]; ++y)
+    {
+        for( int x = 0; x < rooms->dimensions[0]; ++x)
+        {
+            i32 idx = y * rooms->dimensions[0] + x;
+            if( rooms->grid[idx] == 255 )
+                rooms->grid[idx] = 0;
         }
     }
 }
@@ -801,25 +834,29 @@ static void jc_roommaker_find_doors(SRoomMakerContext* ctx, SRooms* rooms)
             prevy_id = prevy_id != id ? prevy_id : 0;
             nexty_id = nexty_id != id ? nexty_id : 0;
 
+            //debug = prevx_id == 4 || prevy_id == 4 || nextx_id == 4 || nexty_id == 4;
+
             if(debug)
             {
-            	printf("prevx_id %d   nextx_id % d\n", prevx_id, nextx_id);
-            	printf("prevy_id %d   nexty_id % d\n", prevy_id, nexty_id);
+                printf("C: %d, %D\n", cx, cy);
+            	printf("    prevx_id %d   nextx_id %d\n", prevx_id, nextx_id);
+            	printf("    prevy_id %d   nexty_id %d\n", prevy_id, nexty_id);
+            	printf("\n");
             }
 
             i64 connectorid = 0;
             i32 region_a = 0;
             i32 region_b = 0;
-            if( prevx_id && nextx_id && (prevx_id != nextx_id) )
-            {
-            	region_a = prevx_id;
-            	region_b = nextx_id;
-            }
-            else if(prevy_id && nexty_id && (prevy_id != nexty_id) )
-            {
-            	region_a = prevy_id;
-            	region_b = nexty_id;
-            }
+
+#define CHECK( _A, _B)  if( (_A) && (_B) && ( (_A) != (_B) ) ) { region_a = (_A); region_b = (_B); }
+            CHECK(prevx_id, nextx_id);
+            CHECK(prevy_id, nexty_id);
+            // ALlow for diagonal connections, to help avoid issues if other parts of the code bugs out
+            CHECK(prevx_id, nexty_id);
+            CHECK(nexty_id, nextx_id);
+            CHECK(nextx_id, prevy_id);
+            CHECK(prevy_id, prevx_id);
+#undef CHECK
 
             if( region_b < region_a )
             {
@@ -837,6 +874,9 @@ static void jc_roommaker_find_doors(SRoomMakerContext* ctx, SRooms* rooms)
 
             	// TODO: Insert based on highest score!
             	connectors[connectorid].push_back( connector );
+
+            	if(debug)
+            	    printf("adding connectorid    %d %d    %lld\n", region_a, region_b, connectorid);
 			}
 		}
     }
@@ -868,6 +908,15 @@ static void jc_roommaker_find_doors(SRoomMakerContext* ctx, SRooms* rooms)
 		{
 			printf("region     %d   %s\n", *it, *it >= rooms->mazeid_start ? "(maze)" : "");
 		}
+
+        std::map<i64, std::vector<SConnector> >::iterator connectorit = connectors.begin();
+        for( ; connectorit != connectors.end(); ++connectorit )
+        {
+            i32 connectorid = connectorit->first;
+            i32 region_a = (i32)((connectorid>>32) & 0xFFFFFFFF);
+            i32 region_b = (i32)(connectorid & 0xFFFFFFFF);
+            printf("MAWE: %d, %d\n", region_a, region_b);
+        }
 		printf("\n");
 	}
 
@@ -878,6 +927,7 @@ static void jc_roommaker_find_doors(SRoomMakerContext* ctx, SRooms* rooms)
 
     	i64 connectorid = 0;
     	std::map<i64, std::vector<SConnector> >::iterator connectorit = connectors.begin();
+
     	for( ; connectorit != connectors.end(); ++connectorit )
     	{
 			connectorid = connectorit->first;
@@ -955,7 +1005,11 @@ static void jc_roommaker_find_doors(SRoomMakerContext* ctx, SRooms* rooms)
     			assert( region_a < rooms->mazeid_start );
 
     			SRoom* room_a = &rooms->rooms[region_a - 1];
-    			assert( (size_t)room_a->numdoors < (sizeof(room_a->doors)/sizeof(room_a->doors[0])) );
+    			if( (size_t)room_a->numdoors >= (sizeof(room_a->doors)/sizeof(room_a->doors[0])) )
+    			{
+    			    continue;
+    			}
+
     			room_a->doors[room_a->numdoors] = doorindex;
     			++room_a->numdoors;
 
@@ -995,24 +1049,34 @@ static void jc_roommaker_find_doors(SRoomMakerContext* ctx, SRooms* rooms)
 }
 
 // A bresenham algorithm
-static inline bool _jc_roommaker_find_nextpos2(const SRooms* rooms, i32 x0, i32 y0, i32 x1, i32 y1, i32* outx, i32* outy)
+static inline bool _jc_roommaker_find_nextpos_old(const SRooms* rooms, i32 x0, i32 y0, i32 x1, i32 y1, i32* outx, i32* outy)
 {
     const i32 width = rooms->dimensions[0];
+
+    printf("   Find next pos:  from %d, %d   to %d, %d  \n", x0, y0, x1, y1);
 
     int dx = abs(x1-x0), sx = x0<x1 ? 1 : -1;
     int dy = abs(y1-y0), sy = y0<y1 ? 1 : -1;
     int err = dx-dy, e2, x2; /* error value e_xy */
-    int ed = dx+dy == 0 ? 1 : sqrt((float)dx*dx+(float)dy*dy);
+    int ed = dx+dy == 0 ? 1 : (int)sqrtf((float)dx*dx+(float)dy*dy);
 
+    int hitcount = 0;
     for (;; )
     {
+        bool iseven = (x0 & 1) == 0 && (y0 & 1) == 0;
         //perpixel(x0, y0, 255*abs(err-dx+dy)/ed);
-        if( rooms->grid[y0 * width + x0] == 0 )
+        if( iseven && rooms->grid[y0 * width + x0] == 0 )
         {
+            ++hitcount;
             printf("    found: %d, %d\n", x0, y0);
-            *outx = x0;
-            *outy = y0;
-            return true;
+            if( hitcount == 1 )
+            {
+                *outx = x0;
+                *outy = y0;
+            }
+            else {
+                return true;
+            }
         }
 
         e2 = err; x2 = x0;
@@ -1022,7 +1086,8 @@ static inline bool _jc_roommaker_find_nextpos2(const SRooms* rooms, i32 x0, i32 
             if (e2+dy < ed)
             {
                 //perpixel(x0,y0+sy, 255*(e2+dy)/ed);
-                if( rooms->grid[(y0+sy) * width + x0] == 0 )
+                iseven = (x0 & 1) == 0 && ((y0+sy) & 1) == 0;
+                if( iseven && rooms->grid[(y0+sy) * width + x0] == 0 )
                 {
                     printf("    found: %d, %d\n", x0, y0+sy);
                     *outx = x0;
@@ -1038,7 +1103,8 @@ static inline bool _jc_roommaker_find_nextpos2(const SRooms* rooms, i32 x0, i32 
             if (dx-e2 < ed)
             {
                 //perpixel(x2+sx,y0, 255*(dx-e2)/ed);
-                if( rooms->grid[y0 * width + x0 + sx] == 0 )
+                iseven = ((x0+sx) & 1) == 0 && (y0 & 1) == 0;
+                if( iseven && rooms->grid[y0 * width + x0 + sx] == 0 )
                 {
                     printf("    found: %d, %d\n", x0+sx, y0);
                     *outx = x0+sx;
@@ -1050,6 +1116,60 @@ static inline bool _jc_roommaker_find_nextpos2(const SRooms* rooms, i32 x0, i32 
         }
     }
     return false;
+}
+
+static inline bool _jc_roommaker_find_nextpos2(const SRooms* rooms, i32 x0, i32 y0, i32 x1, i32 y1, i32* outx, i32* outy)
+{
+    const i32 width = rooms->dimensions[0];
+
+    printf("   Find next pos:  from %d, %d   to %d, %d  \n", x0, y0, x1, y1);
+
+    int dx = abs(x1-x0), sx = x0<x1 ? 1 : -1;
+    int dy = abs(y1-y0), sy = y0<y1 ? 1 : -1;
+    int err = dx-dy, e2, x2; // error value e_xy
+    int ed = dx+dy == 0 ? 1 : (int)sqrtf((float)dx*dx+(float)dy*dy);
+
+#define CHECK( _A, _B) { \
+    int a = (_A); \
+    int b = (_B); \
+    const bool even = ( a & 1 ) == 0 && ( b & 1 ) == 0; \
+    if( even && rooms->grid[b * width + a] == 0 ) \
+    { \
+        printf("    found %d, %d\n", a, b); \
+        *outx = a; \
+        *outy = b; \
+        return true; \
+    } \
+}
+
+    for (;; )
+    {
+        CHECK( x0, y0 );
+
+        e2 = err; x2 = x0;
+        if (2*e2 >= -dx)
+        { // x step
+            if (x0 == x1) break;
+            if (e2+dy < ed)
+            {
+                CHECK( x0, y0+sy );
+            }
+            err -= dy; x0 += sx;
+        }
+        if (2*e2 <= dy)
+        { // y step
+            if (y0 == y1) break;
+            if (dx-e2 < ed)
+            {
+                CHECK( x2+sx, y0 );
+            }
+            err += dx; y0 += sy;
+        }
+    }
+
+    return false;
+
+#undef CHECK
 }
 
 static inline bool _jc_roommaker_find_nextpos(SRoomMakerContext* ctx, const SRooms* rooms, i32 x, i32 y, i32 w, i32 h, int dir, i32* outx, i32* outy)
@@ -1095,14 +1215,52 @@ static inline bool _jc_roommaker_find_nextpos(SRoomMakerContext* ctx, const SRoo
     return false;
 }
 
-static bool _jc_roommaker_grow(SRoomMakerContext* ctx, const SRooms* rooms, i32 x, i32 y, i32 w, i32 h, i32 minroomsize, i32 dir, i32* outx, i32* outy, i32* outw, i32* outh)
+static inline void _jc_roommaker_adjust_coord(i32 dir, i32 w, i32 h, i32* x, i32* y)
+{
+    switch( dir )
+    {
+    case 0:
+    case 3:
+    case 5: *x -= w - 1; break;
+    default: break;
+    }
+
+    switch( dir )
+    {
+    case 0:
+    case 1:
+    case 2: *y -= h - 1; break;
+    default: break;
+    }
+}
+
+static bool _jc_roommaker_shrink(SRoomMakerContext* ctx, const SRooms* rooms, i32 x, i32 y, i32 w, i32 h, i32 minroomsize, i32 dir, i32* outx, i32* outy, i32* outw, i32* outh)
 {
     i32 width = rooms->dimensions[0];
     i32 height = rooms->dimensions[1];
 
+    _jc_roommaker_adjust_coord(dir, w, h, &x, &y);
+    /*
+    switch( dir )
+    {
+    case 0:
+    case 3:
+    case 5: x -= w - 1; break;
+    default: break;
+    }
+
+    switch( dir )
+    {
+    case 0:
+    case 1:
+    case 2: y -= h - 1; break;
+    default: break;
+    }*/
+
+
     while( w > 1 && h > 1 )
     {
-        printf("   grow: %d, %d  %d, %d   %d\n", x, y, w, h, minroomsize);
+        printf("   shrink: %d, %d  %d, %d   %d   dir %d\n", x, y, w, h, minroomsize, dir);
 
         if( !jc_roommaker_is_overlapping_tight(rooms, x, y, w, h) )
         {
@@ -1116,6 +1274,26 @@ static bool _jc_roommaker_grow(SRoomMakerContext* ctx, const SRooms* rooms, i32 
 
         switch( dir )
         {
+        case 0:
+        case 3:
+        case 5: x += 2; w -= 2; break;
+        default: break;
+        }
+
+        switch( dir )
+        {
+        case 0:
+        case 1:
+        case 2: y += 2; break;
+        default: break;
+        }
+
+        w -= 2;
+        h -= 2;
+
+        /*
+        switch( dir )
+        {
         case 0: x -= 2; y -= 2; break;
         case 1: x += 0; y -= 2; break;
         case 2: x += 0; y -= 2; break;
@@ -1125,12 +1303,13 @@ static bool _jc_roommaker_grow(SRoomMakerContext* ctx, const SRooms* rooms, i32 
         case 6: x += 0; y += 2; break;
         case 7: x += 0; y += 2; break;
         }
+        */
 
         if( x < 0 || y < 0 || x >= width || y >= height )
             return false;
 
-        w -= 2;
-        h -= 2;
+        //w -= 2;
+        //h -= 2;
 
         if( w < minroomsize || h < minroomsize )
             return false;
@@ -1141,25 +1320,46 @@ static bool _jc_roommaker_grow(SRoomMakerContext* ctx, const SRooms* rooms, i32 
 }
 
 
+static inline i32 _jc_roommaker_get_dir(i32 x0, i32 y0, i32 x1, i32 y1)
+{
+    i32 dir = 0;
+    if( x1 < x0 )
+    {
+        if( y1 < y0 )        dir = 0;
+        else if( y1 == y0)   dir = 3;
+        else                 dir = 5;
+    }
+    else if( x1 == x0 )
+    {
+        if( y1 < y0 )        dir = 1;
+        else                 dir = 6;
+    }
+    else
+    {
+        if( y1 < y0 )        dir = 2;
+        else if( y1 == y0)   dir = 4;
+        else                 dir = 7;
+    }
+    return dir;
+}
+
 static void jc_roommaker_make_rooms_islands(SRoomMakerContext* ctx, SRooms* rooms)
 {
     srand(ctx->seed);
 
     u16 minroomsize = 3;
-    u16 roomsize = 20 - minroomsize;
+    u16 roomsize = 12 - minroomsize;
 
     i32 width = rooms->dimensions[0];
     i32 height = rooms->dimensions[1];
 
     std::vector<SCoord> islands;
 
-    i32 numislands = 5;
+    i32 numislands = 8;
     for( int i = 0; i < numislands; ++i )
     {
         i32 w = (i32)(minroomsize + jc_roommaker_rand01() * roomsize);
         i32 h = (i32)(minroomsize + jc_roommaker_rand01() * roomsize);
-
-        printf("rand  w/h: %d, %d\n", w, h);
 
         // random direction
         //i32 dir = (i32)(jc_roommaker_rand01() * 8) % 8;
@@ -1183,24 +1383,32 @@ static void jc_roommaker_make_rooms_islands(SRoomMakerContext* ctx, SRooms* room
             f32 r = jc_roommaker_rand01();
             if( r < 0.5f )
             {
-                endposx = jc_roommaker_rand01() * width;
+                endposx = (i32)(jc_roommaker_rand01() * width);
                 endposy = jc_roommaker_rand01() < 0.5 ? 0 : height-1;
             }
             else
             {
                 endposx = jc_roommaker_rand01() < 0.5 ? 0 : width-1;
-                endposy = jc_roommaker_rand01() * height;
+                endposy = (i32)(jc_roommaker_rand01() * height);
             }
 
         } while( !_jc_roommaker_find_nextpos2(rooms, posx, posy, endposx, endposy, &posx, &posy) );
 
         jc_roommaker_adjust_pos_and_dims(ctx, posx, posy, w, h);
 
+        if( w < minroomsize || h < minroomsize )
+        {
+            printf("Room too small!\n");
+            continue;
+        }
+
+        i32 dir = _jc_roommaker_get_dir(posx, posy, endposx, endposy);
+        /*
         i32 dir = 0;
         if( endposx < posx )
         {
             if( endposy < posy )        dir = 0;
-            else if( endposy = posy)    dir = 3;
+            else if( endposy == posy)   dir = 3;
             else                        dir = 5;
         }
         else if( endposx == posx )
@@ -1211,13 +1419,12 @@ static void jc_roommaker_make_rooms_islands(SRoomMakerContext* ctx, SRooms* room
         else
         {
             if( endposy < posy )        dir = 2;
-            else if( endposy = posy)    dir = 4;
+            else if( endposy == posy)   dir = 4;
             else                        dir = 7;
-        }
+        }*/
 
-        if( _jc_roommaker_grow(ctx, rooms, posx, posy, w, h, minroomsize, dir, &posx, &posy, &w, &h) )
+        if( _jc_roommaker_shrink(ctx, rooms, posx, posy, w, h, minroomsize, dir, &posx, &posy, &w, &h) )
         {
-            printf("grew x/y: %d, %d  w/h: %d, %d\n", posx, posy, w, h);
             SRoom* room = &rooms->rooms[rooms->numrooms];
             memset(room, 0, sizeof(SRoom));
             room->id        = (u16)++rooms->nextid;
@@ -1234,8 +1441,12 @@ static void jc_roommaker_make_rooms_islands(SRoomMakerContext* ctx, SRooms* room
         }
     }
 
+    printf("LOOPING\n");
+
     for( int i = (int)islands.size(); i < ctx->maxnumrooms; ++i )
     {
+        printf("LOOPING %d\n", i);
+
         i32 w = (i32)(minroomsize + jc_roommaker_rand01() * roomsize);
         i32 h = (i32)(minroomsize + jc_roommaker_rand01() * roomsize);
 
@@ -1254,31 +1465,82 @@ static void jc_roommaker_make_rooms_islands(SRoomMakerContext* ctx, SRooms* room
             continue;
         }
         */
+
         i32 endposx = 0;
         i32 endposy = 0;
+
+        /*
         do
         {
             f32 r = jc_roommaker_rand01();
             if( r < 0.5f )
             {
-                endposx = jc_roommaker_rand01() * width;
+                endposx = (i32)(jc_roommaker_rand01() * width);
                 endposy = jc_roommaker_rand01() < 0.5 ? 0 : height-1;
             }
             else
             {
                 endposx = jc_roommaker_rand01() < 0.5 ? 0 : width-1;
-                endposy = jc_roommaker_rand01() * height;
+                endposy = (i32)(jc_roommaker_rand01() * height);
             }
 
         } while( !_jc_roommaker_find_nextpos2(rooms, posx, posy, endposx, endposy, &posx, &posy) );
 
+        */
+
+        i32 dir = 0;
+
+        int tries = 10;
+        while( --tries > 0 )
+        {
+            f32 r = jc_roommaker_rand01();
+            if( r < 0.5f )
+            {
+                endposx = (i32)(jc_roommaker_rand01() * width);
+                endposy = jc_roommaker_rand01() < 0.5 ? 0 : height-1;
+            }
+            else
+            {
+                endposx = jc_roommaker_rand01() < 0.5 ? 0 : width-1;
+                endposy = (i32)(jc_roommaker_rand01() * height);
+            }
+
+            if( _jc_roommaker_find_nextpos2(rooms, posx, posy, endposx, endposy, &posx, &posy) )
+            {
+                dir = _jc_roommaker_get_dir(posx, posy, endposx, endposy);
+
+                printf("dir: %d\n", dir);
+
+                i32 x = posx;
+                i32 y = posy;
+                _jc_roommaker_adjust_coord(dir, minroomsize, minroomsize, &x, &y);
+
+                printf("x, y, w, h: %d, %d  %d, %d\n", x, y, minroomsize, minroomsize);
+
+                if( jc_roommaker_is_overlapping_tight(rooms, x, y, minroomsize, minroomsize) )
+                {
+                    jc_roommaker_draw_room_invalidate(rooms, x, y, minroomsize, minroomsize);
+                }
+                else
+                {
+                    break;
+                }
+            }
+        }
+        if( tries <= 0 )
+        {
+            printf("SKIPPED EARLY!\n");
+            continue;
+        }
+
         jc_roommaker_adjust_pos_and_dims(ctx, posx, posy, w, h);
 
+        /*
         i32 dir = 0;
         if( endposx < posx )
         {
             if( endposy < posy )        dir = 0;
-            else if( endposy = posy)    dir = 3;
+            else if( endposy == posy)   dir = 3;
             else                        dir = 5;
         }
         else if( endposx == posx )
@@ -1289,13 +1551,13 @@ static void jc_roommaker_make_rooms_islands(SRoomMakerContext* ctx, SRooms* room
         else
         {
             if( endposy < posy )        dir = 2;
-            else if( endposy = posy)    dir = 4;
+            else if( endposy == posy)   dir = 4;
             else                        dir = 7;
-        }
+        }*/
 
-        printf("  %d  Next pos:   %d, %d  %d, %d\n", i, posx, posy, w, h);
+        printf("  %d  Next pos:   %d, %d  %d, %d    dir %d\n", i, posx, posy, w, h, dir);
 
-        if( _jc_roommaker_grow(ctx, rooms, posx, posy, w, h, minroomsize, dir, &posx, &posy, &w, &h) )
+        if( _jc_roommaker_shrink(ctx, rooms, posx, posy, w, h, minroomsize, dir, &posx, &posy, &w, &h) )
         {
             //printf("grew x/y: %d, %d  w/h: %d, %d\n", posx, posy, w, h);
             SRoom* room = &rooms->rooms[rooms->numrooms];
@@ -1312,12 +1574,18 @@ static void jc_roommaker_make_rooms_islands(SRoomMakerContext* ctx, SRooms* room
             // pop one, add another
             if( jc_roommaker_rand01() < 0.30f )
             {
-                SCoord c = { (u16)posx, (u16)posy };
+                SCoord newcoord = { (u16)posx, (u16)posy };
                 islands.erase( islands.begin() + island );
-                islands.push_back( c );
+                islands.push_back( newcoord );
             }
         }
+        else
+        {
+            printf("SKIPPED!\n");
+        }
     }
+
+    jc_roommaker_clear_invalidated_areas(rooms);
 }
 
 /*
