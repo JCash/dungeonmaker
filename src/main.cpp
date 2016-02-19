@@ -245,8 +245,8 @@ int main(int argc, const char** argv)
     printf("Generated %d rooms (out of max %d)\n", rooms->numrooms, roomctx.maxnumrooms);
 
     SImage image;
-    image.width     = IMAGEDIMS;
-    image.height    = IMAGEDIMS;
+    image.width     = roomctx.dimensions[0] * PIXELS_PER_ROOM;
+    image.height    = roomctx.dimensions[1] * PIXELS_PER_ROOM;
     image.channels  = 3;
 
     size_t imagesize = (size_t)(image.width * image.height * image.channels);

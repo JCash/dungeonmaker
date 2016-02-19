@@ -135,7 +135,7 @@ SRooms* jc_roommaker_create(SRoomMakerContext* ctx)
 
     memset(rooms->grid, 0, sizeof(int) * (size_t)(ctx->dimensions[0] * ctx->dimensions[1]) );
 
-    //ctx->maxnumrooms = 180;
+    //ctx->maxnumrooms = 320;
 
     if(false)
     {
@@ -157,6 +157,7 @@ SRooms* jc_roommaker_create(SRoomMakerContext* ctx)
         TimerScope timer("make_rooms_islands");
         jc_roommaker_make_rooms_islands(ctx, rooms);
     }
+
     {
 		TimerScope timer("make_mazes");
 		jc_roommaker_make_mazes(ctx, rooms);
@@ -166,11 +167,11 @@ SRooms* jc_roommaker_create(SRoomMakerContext* ctx)
     	TimerScope timer("find_doors");
     	jc_roommaker_find_doors(ctx, rooms);
     }
+
     {
 		TimerScope timer("remove_dead_ends");
 		jc_roommaker_remove_dead_ends(ctx, rooms);
     }
-
     //
     {
 		TimerScope timer("cleanup_mazes");
@@ -1224,14 +1225,22 @@ static void jc_roommaker_make_rooms_islands(SRoomMakerContext* ctx, SRooms* room
 
     std::vector<SCoord> islands;
 
-    i32 numislands = 8;
+    i32 numislands = 30;
     for( int i = 0; i < numislands; ++i )
     {
         i32 w = (i32)(minroomsize + jc_roommaker_rand01() * roomsize);
         i32 h = (i32)(minroomsize + jc_roommaker_rand01() * roomsize);
 
-        i32 posx = (i32)(jc_roommaker_rand01() * (ctx->dimensions[0] - 1));
-        i32 posy = (i32)(jc_roommaker_rand01() * (ctx->dimensions[1] - 1));
+        i32 offset = 40;
+        i32 offsetsize = ctx->dimensions[0] - offset*2;
+
+        //i32 offsetx = offset * jc_roommaker_rand01();
+        //i32 offsety = offset * jc_roommaker_rand01();
+        //i32 posx = jc_roommaker_rand01() < 0.5 ? offset + offsetx : width - offset - offsetx;
+        //i32 posy = jc_roommaker_rand01() < 0.5 ? offset + offsety : height - offset - offsety;
+
+        i32 posx = offset + (i32)(jc_roommaker_rand01() * offsetsize);
+        i32 posy = offset + (i32)(jc_roommaker_rand01() * offsetsize);
 
         jc_roommaker_adjust_pos_and_dims(ctx, posx, posy, w, h);
 
