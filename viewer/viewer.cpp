@@ -1,8 +1,18 @@
 
-#define SOKOL_METAL
-#include "sokol_gfx.h"
+#if defined(__APPLE__)
+    #define SOKOL_METAL
+#elif defined(WIN32)
+    #define SOKOL_D3D11
+#elif defined(__EMSCRIPTEN__)
+    #define SOKOL_GLES2
+#else
+    #error "No GFX Backend Specified"
+#endif
+
 #include "sokol_app.h"
+#include "sokol_gfx.h"
 #include "sokol_time.h"
+
 #include "imgui.h"
 #include <stdio.h>
 #include <string.h>
@@ -110,9 +120,14 @@ static void init(void) {
     sg_buffer ibuf = sg_make_buffer(&indexbuf_desc);
 
     sg_shader_desc shader_desc = (sg_shader_desc){
-        .vs.uniform_blocks[0].size = sizeof(vs_params_t),
+        .vs.uniform_blocks[0] = {
+            .size = sizeof(vs_params_t),
+            .uniforms = {
+                [0] = { .name="mvp", .type=SG_UNIFORMTYPE_MAT4 }
+            }
+        },
+        .fs.images[0] = { .name="tex", .type=SG_IMAGETYPE_2D },
         .vs.source = vs_src,
-        .fs.images[0].type = SG_IMAGETYPE_2D,
         .fs.source = fs_src
     };
     sg_shader shd = sg_make_shader(&shader_desc);
@@ -120,9 +135,9 @@ static void init(void) {
     sg_pipeline_desc pipeline_desc = (sg_pipeline_desc){
         .layout = {
             .attrs = {
-                [0] = { .format=SG_VERTEXFORMAT_FLOAT3 },
-                [1] = { .format=SG_VERTEXFORMAT_FLOAT4 },
-                [2] = { .format=SG_VERTEXFORMAT_FLOAT2 }
+                [0] = { .name="position",   .format=SG_VERTEXFORMAT_FLOAT3 },
+                [1] = { .name="color0",     .format=SG_VERTEXFORMAT_FLOAT4 },
+                [2] = { .name="texcoord0",  .format=SG_VERTEXFORMAT_FLOAT2 }
             },
         },
         .shader = shd,
@@ -132,7 +147,7 @@ static void init(void) {
             .depth_write_enabled = true
         },
         .rasterizer.cull_mode = SG_CULLMODE_BACK,
-        .rasterizer.sample_count = 4
+        //.rasterizer.sample_count = 4
     };
     sg_pipeline pip = sg_make_pipeline(&pipeline_desc);
 
@@ -538,6 +553,58 @@ const char* fs_src =
     "fragment float4 _main(fs_in in [[stage_in]], texture2d<float> tex [[texture(0)]], sampler smp [[sampler(0)]]) {\n"
     "  return float4(tex.sample(smp, in.uv).xyz, 1.0) * in.color;\n"
     "};\n";
+
+#elif defined(SOKOL_GLES2)
+const char* vs_src =
+    "uniform mat4 mvp;\n"
+    "attribute vec4 position;\n"
+    "attribute vec4 color0;\n"
+    "attribute vec2 texcoord0;\n"
+    "varying vec2 uv;"
+    "varying vec4 color;"
+    "void main() {\n"
+    "  gl_Position = mvp * position;\n"
+    "  uv = texcoord0;\n"
+    "  color = color0;\n"
+    "}\n";
+const char* fs_src =
+    "precision mediump float;\n"
+    "uniform sampler2D tex;\n"
+    "varying vec4 color;\n"
+    "varying vec2 uv;\n"
+    "void main() {\n"
+    "  gl_FragColor = texture2D(tex, uv) * color;\n"
+    "}\n";
+#elif defined(SOKOL_D3D11)
+const char* vs_src =
+    "cbuffer params {\n"
+    "  float2 disp_size;\n"
+    "};\n"
+    "struct vs_in {\n"
+    "  float2 pos: POSITION;\n"
+    "  float2 uv: TEXCOORD0;\n"
+    "  float4 color: COLOR0;\n"
+    "};\n"
+    "struct vs_out {\n"
+    "  float2 uv: TEXCOORD0;\n"
+    "  float4 color: COLOR0;\n"
+    "  float4 pos: SV_Position;\n"
+    "};\n"
+    "vs_out main(vs_in inp) {\n"
+    "  vs_out outp;\n"
+    "  outp.pos = float4(((inp.pos/disp_size)-0.5)*float2(2.0,-2.0), 0.5, 1.0);\n"
+    "  outp.uv = inp.uv;\n"
+    "  outp.color = inp.color;\n"
+    "  return outp;\n"
+    "}\n";
+const char* fs_src =
+    "Texture2D<float4> tex: register(t0);\n"
+    "sampler smp: register(s0);\n"
+    "float4 main(float2 uv: TEXCOORD0, float4 color: COLOR0): SV_Target0 {\n"
+    "  return tex.Sample(smp, uv) * color;\n"
+    "}\n";
+#else
+    #error "No shader implemented yet for this platform"
 #endif
 
 

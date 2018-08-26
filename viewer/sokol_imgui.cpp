@@ -1,21 +1,27 @@
 #include "imgui.h"
 
-#ifdef __APPLE__
-#define SOKOL_METAL
-#endif
-#ifdef WIN32
-#define SOKOL_D3D11
+#if defined(__APPLE__)
+    #define SOKOL_METAL
+#elif defined(WIN32)
+    #define SOKOL_D3D11
+#elif defined(__EMSCRIPTEN__)
+    #define SOKOL_GLES2
+#else
+    #error "No GFX Backend Specified"
 #endif
 
 #define SOKOL_IMPL
 
-#include "sokol_gfx.h"
 #include "sokol_app.h"
+#include "sokol_gfx.h"
 #include "sokol_time.h"
 #include <stdio.h>
 
 const int MaxVertices = (1<<16);
 const int MaxIndices = MaxVertices * 3;
+
+extern const char* vs_src_imgui;
+extern const char* fs_src_imgui;
 
 static sg_draw_state draw_state = { };
 ImDrawVert vertices[MaxVertices];
@@ -126,40 +132,12 @@ void imgui_setup() {
     // shader object for imgui renering
     sg_shader_desc shd_desc = {
         .vs.uniform_blocks[0].size = sizeof(vs_params_t),
-        .vs.source =
-            "#include <metal_stdlib>\n"
-            "using namespace metal;\n"
-            "struct params_t {\n"
-            "  float2 disp_size;\n"
-            "};\n"
-            "struct vs_in {\n"
-            "  float2 pos [[attribute(0)]];\n"
-            "  float2 uv [[attribute(1)]];\n"
-            "  float4 color [[attribute(2)]];\n"
-            "};\n"
-            "struct vs_out {\n"
-            "  float4 pos [[position]];\n"
-            "  float2 uv;\n"
-            "  float4 color;\n"
-            "};\n"
-            "vertex vs_out _main(vs_in in [[stage_in]], constant params_t& params [[buffer(0)]]) {\n"
-            "  vs_out out;\n"
-            "  out.pos = float4(((in.pos / params.disp_size)-0.5)*float2(2.0,-2.0), 0.5, 1.0);\n"
-            "  out.uv = in.uv;\n"
-            "  out.color = in.color;\n"
-            "  return out;\n"
-            "}\n",
+        .vs.uniform_blocks[0].uniforms[0].name = "disp_size",
+        .vs.uniform_blocks[0].uniforms[0].type = SG_UNIFORMTYPE_FLOAT2,
+        .vs.source = vs_src_imgui,
         .fs.images[0].type = SG_IMAGETYPE_2D,
-        .fs.source =
-            "#include <metal_stdlib>\n"
-            "using namespace metal;\n"
-            "struct fs_in {\n"
-            "  float2 uv;\n"
-            "  float4 color;\n"
-            "};\n"
-            "fragment float4 _main(fs_in in [[stage_in]], texture2d<float> tex [[texture(0)]], sampler smp [[sampler(0)]]) {\n"
-            "  return tex.sample(smp, in.uv) * in.color;\n"
-            "}\n"
+        .fs.images[0].name = "tex",
+        .fs.source = fs_src_imgui,
     };
     sg_shader shd = sg_make_shader(&shd_desc);
 
@@ -255,3 +233,135 @@ static void imgui_draw_cb(ImDrawData* draw_data) {
 void imgui_teardown() {
     ImGui::DestroyContext();
 }
+
+#if defined(SOKOL_GLCORE33)
+const char* vs_src_imgui =
+    "#version 330\n"
+    "uniform vec2 disp_size;\n"
+    "in vec2 position;\n"
+    "in vec2 texcoord0;\n"
+    "in vec4 color0;\n"
+    "out vec2 uv;\n"
+    "out vec4 color;\n"
+    "void main() {\n"
+    "    gl_Position = vec4(((position/disp_size)-0.5)*vec2(2.0,-2.0), 0.5, 1.0);\n"
+    "    uv = texcoord0;\n"
+    "    color = color0;\n"
+    "}\n";
+const char* fs_src_imgui =
+    "#version 330\n"
+    "uniform sampler2D tex;\n"
+    "in vec2 uv;\n"
+    "in vec4 color;\n"
+    "out vec4 frag_color;\n"
+    "void main() {\n"
+    "    frag_color = texture(tex, uv) * color;\n"
+    "}\n";
+#elif defined(SOKOL_GLES2)
+const char* vs_src_imgui =
+    "uniform vec2 disp_size;\n"
+    "attribute vec2 position;\n"
+    "attribute vec2 texcoord0;\n"
+    "attribute vec4 color0;\n"
+    "varying vec2 uv;\n"
+    "varying vec4 color;\n"
+    "void main() {\n"
+    "    gl_Position = vec4(((position/disp_size)-0.5)*vec2(2.0,-2.0), 0.5, 1.0);\n"
+    "    uv = texcoord0;\n"
+    "    color = color0;\n"
+    "}\n";
+const char* fs_src_imgui =
+    "precision mediump float;\n"
+    "uniform sampler2D tex;\n"
+    "varying vec2 uv;\n"
+    "varying vec4 color;\n"
+    "void main() {\n"
+    "    gl_FragColor = texture2D(tex, uv) * color;\n"
+    "}\n";
+#elif defined(SOKOL_GLES3)
+const char* vs_src_imgui =
+    "#version 300 es\n"
+    "uniform vec2 disp_size;\n"
+    "in vec2 position;\n"
+    "in vec2 texcoord0;\n"
+    "in vec4 color0;\n"
+    "out vec2 uv;\n"
+    "out vec4 color;\n"
+    "void main() {\n"
+    "    gl_Position = vec4(((position/disp_size)-0.5)*vec2(2.0,-2.0), 0.5, 1.0);\n"
+    "    uv = texcoord0;\n"
+    "    color = color0;\n"
+    "}\n";
+const char* fs_src_imgui =
+    "#version 300 es\n"
+    "precision mediump float;"
+    "uniform sampler2D tex;\n"
+    "in vec2 uv;\n"
+    "in vec4 color;\n"
+    "out vec4 frag_color;\n"
+    "void main() {\n"
+    "    frag_color = texture(tex, uv) * color;\n"
+    "}\n";
+#elif defined(SOKOL_METAL)
+const char* vs_src_imgui =
+    "#include <metal_stdlib>\n"
+    "using namespace metal;\n"
+    "struct params_t {\n"
+    "  float2 disp_size;\n"
+    "};\n"
+    "struct vs_in {\n"
+    "  float2 pos [[attribute(0)]];\n"
+    "  float2 uv [[attribute(1)]];\n"
+    "  float4 color [[attribute(2)]];\n"
+    "};\n"
+    "struct vs_out {\n"
+    "  float4 pos [[position]];\n"
+    "  float2 uv;\n"
+    "  float4 color;\n"
+    "};\n"
+    "vertex vs_out _main(vs_in in [[stage_in]], constant params_t& params [[buffer(0)]]) {\n"
+    "  vs_out out;\n"
+    "  out.pos = float4(((in.pos / params.disp_size)-0.5)*float2(2.0,-2.0), 0.5, 1.0);\n"
+    "  out.uv = in.uv;\n"
+    "  out.color = in.color;\n"
+    "  return out;\n"
+    "}\n";
+const char* fs_src_imgui =
+    "#include <metal_stdlib>\n"
+    "using namespace metal;\n"
+    "struct fs_in {\n"
+    "  float2 uv;\n"
+    "  float4 color;\n"
+    "};\n"
+    "fragment float4 _main(fs_in in [[stage_in]], texture2d<float> tex [[texture(0)]], sampler smp [[sampler(0)]]) {\n"
+    "  return tex.sample(smp, in.uv) * in.color;\n"
+    "}\n";
+#elif defined(SOKOL_D3D11)
+const char* vs_src_imgui =
+    "cbuffer params {\n"
+    "  float2 disp_size;\n"
+    "};\n"
+    "struct vs_in {\n"
+    "  float2 pos: POSITION;\n"
+    "  float2 uv: TEXCOORD0;\n"
+    "  float4 color: COLOR0;\n"
+    "};\n"
+    "struct vs_out {\n"
+    "  float2 uv: TEXCOORD0;\n"
+    "  float4 color: COLOR0;\n"
+    "  float4 pos: SV_Position;\n"
+    "};\n"
+    "vs_out main(vs_in inp) {\n"
+    "  vs_out outp;\n"
+    "  outp.pos = float4(((inp.pos/disp_size)-0.5)*float2(2.0,-2.0), 0.5, 1.0);\n"
+    "  outp.uv = inp.uv;\n"
+    "  outp.color = inp.color;\n"
+    "  return outp;\n"
+    "}\n";
+const char* fs_src_imgui =
+    "Texture2D<float4> tex: register(t0);\n"
+    "sampler smp: register(s0);\n"
+    "float4 main(float2 uv: TEXCOORD0, float4 color: COLOR0): SV_Target0 {\n"
+    "  return tex.Sample(smp, uv) * color;\n"
+    "}\n";
+#endif
