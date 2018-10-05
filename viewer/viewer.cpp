@@ -205,7 +205,7 @@ static void init(void) {
     g_NoiseParams.fbm_amplitude = 1.0f;
     g_NoiseParams.fbm_gain = 0.831f;
 
-    g_NoiseParams.noise_modify_type = 2;
+    g_NoiseParams.noise_modify_type = 0;
     g_NoiseParams.noise_contrast_type = 2;
 
 
@@ -234,7 +234,8 @@ static void frame(void) {
     io.DeltaTime = (float) stm_sec(stm_laptime(&last_time));
     ImGui::NewFrame();
 
-    ImGui::SetNextWindowPos(ImVec2(image_area_width, 0), ImGuiSetCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImVec2((w * 2) / 3, 0));
+    ImGui::SetNextWindowSize(ImVec2((w * 1) / 3, h));
     ImGui::Begin("Config", 0);
 
     ImGui::SetWindowSize(ImVec2(imgui_width, image_area_height));
@@ -248,12 +249,7 @@ static void frame(void) {
             g_NoiseParams.seed = rand() & 0xFFFF;
         }
 
-        {
-            const char* names[] = {"Perlin", "Simplex"};
-            ImGui::Combo("Type", &noise_type, names, sizeof(names)/sizeof(names[0]));
-        }
-
-        ImGui::Separator();
+        ImGui::Combo("Noise Type", &noise_type, "Perlin\0Simplex (not implemented)\0");
 
         if (ImGui::CollapsingHeader("fBm")) {
             ImGui::Text("fBm");
@@ -265,15 +261,32 @@ static void frame(void) {
         }
 
         ImGui::Separator();
+
+        ImGui::Combo("Perturb Type", &g_NoiseParams.perturb_type, "None\0Perturb 1\0Perturb 2\0");
+        if (g_NoiseParams.perturb_type == 1)
+        {
+            ImGui::SliderFloat("scale", &g_NoiseParams.perturb1_scale, 0.01f, 256.0f);
+            ImGui::SliderFloat("a1", &g_NoiseParams.perturb1_a1, 0.01f, 10.0f);
+            ImGui::SliderFloat("a2", &g_NoiseParams.perturb1_a2, 0.01f, 10.0f);
+        }
+        else if (g_NoiseParams.perturb_type == 2)
+        {
+            ImGui::SliderFloat("scale", &g_NoiseParams.perturb2_scale, 0.01f, 256.0f);
+            ImGui::SliderFloat("qyx", &g_NoiseParams.perturb2_qyx, 0.01f, 10.0f);
+            ImGui::SliderFloat("qyy", &g_NoiseParams.perturb2_qyy, 0.01f, 10.0f);
+            ImGui::SliderFloat("rxx", &g_NoiseParams.perturb2_rxx, 0.01f, 10.0f);
+            ImGui::SliderFloat("rxy", &g_NoiseParams.perturb2_rxy, 0.01f, 10.0f);
+            ImGui::SliderFloat("ryx", &g_NoiseParams.perturb2_ryx, 0.01f, 10.0f);
+            ImGui::SliderFloat("ryy", &g_NoiseParams.perturb2_ryy, 0.01f, 10.0f);
+        }
+
+        ImGui::Separator();
         ImGui::Text("Processing");
 
         ImGui::Checkbox("Use Radial Falloff", &g_NoiseParams.apply_radial);
         ImGui::SliderFloat("Radial Falloff", &g_NoiseParams.radial_falloff, 0.001f, 1.0f);
 
-        {
-            const char* names[] = {"None", "Billow", "Ridge"};
-            ImGui::Combo("Modification", &g_NoiseParams.noise_modify_type, names, sizeof(names)/sizeof(names[0]));
-        }
+        ImGui::Combo("Modification Type", &g_NoiseParams.noise_modify_type, "None\0Billow\0Ridge\0");
 
         ImGui::SliderFloat("Power", &g_NoiseParams.contrast_exponent, 0.01f, 10.0f);
     }
@@ -281,8 +294,7 @@ static void frame(void) {
     if (ImGui::CollapsingHeader("Erosion")) {
         ImGui::Checkbox("Use Erosion", &g_NoiseParams.use_erosion);
 
-        const char* names[] = {"Thermal", "Hydraulic"};
-        ImGui::Combo("Modification", &g_NoiseParams.erode_type, names, sizeof(names)/sizeof(names[0]));
+        ImGui::Combo("Erosion Type", &g_NoiseParams.erode_type, "Thermal\0Hydraulic\0");
         ImGui::InputInt("Iterations", &g_NoiseParams.erode_iterations);
 
         if (g_NoiseParams.erode_type == 0)
@@ -311,12 +323,11 @@ static void frame(void) {
 
         ImGui::SliderInt("Border", &g_VoronoiParams.border, 0, g_MapParams.width/2);
 
-        const char* names[] = {"Random", "Hexagonal"};
-        ImGui::Combo("Type", &g_VoronoiParams.generation_type, names, sizeof(names)/sizeof(names[0]));
+        ImGui::Combo("Cell Type", &g_VoronoiParams.generation_type, "Random\0Hexagonal\0");
 
         if (g_VoronoiParams.generation_type == 0) // random
         {
-            ImGui::SliderInt("Num Cells", &g_VoronoiParams.num_cells, 1, 2048);
+            ImGui::SliderInt("Num Cells", &g_VoronoiParams.num_cells, 1, 16*1024);
             ImGui::SliderInt("Relax", &g_VoronoiParams.num_relaxations, 0, 100);
         }
         else if(g_VoronoiParams.generation_type == 1) // hexagonal
@@ -396,7 +407,21 @@ static void frame(void) {
         memset(sediment, 0, size*sizeof(float));
         memset(water, 0, size*sizeof(float));
 
-        GenerateNoise(noisef, g_NoiseParams.noise_modify_type);
+        if (g_NoiseParams.perturb_type == 0)
+            GenerateNoise(noisef, g_NoiseParams.noise_modify_type);
+        else if(g_NoiseParams.perturb_type == 1)
+            Perturb1(g_MapParams.width, g_MapParams.height, noisef);
+        else if(g_NoiseParams.perturb_type == 2)
+            Perturb2(g_MapParams.width, g_MapParams.height, noisef);
+
+        if (g_NoiseParams.perturb_type != 0)
+        {
+            Blur(g_MapParams.width, g_MapParams.height, noisef, 255.0f);
+            Blur(g_MapParams.width, g_MapParams.height, noisef, 255.0f);
+            Blur(g_MapParams.width, g_MapParams.height, noisef, 255.0f);
+            Blur(g_MapParams.width, g_MapParams.height, noisef, 255.0f);
+        }
+
         ContrastNoise(noisef, g_NoiseParams.contrast_exponent);
         if (g_NoiseParams.use_erosion)
             Erode(g_MapParams.width, g_MapParams.height, noisef, sediment, water);
@@ -503,6 +528,9 @@ void event(const sapp_event* event) {
         if (event->key_code == SAPP_KEYCODE_ESCAPE) {
             exit(0);
         }
+    }
+    else if(event->type == SAPP_EVENTTYPE_RESIZED) {
+        //printf("RESIZED: %d, %d\n", event->framebuffer_width, event->framebuffer_height);
     }
 }
 

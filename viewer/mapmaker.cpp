@@ -31,6 +31,20 @@ SNoiseParameters::SNoiseParameters()
     fbm_amplitude = 1.0f;
     fbm_gain = 0.5f;
     noise_modify_type = 0;
+
+    perturb_type    = 0; // 0 == none
+    perturb1_a1     = 5.0f;
+    perturb1_a2     = 1.0f;
+    perturb1_scale  = 8.0f;
+
+    perturb2_scale = 512.0f;
+    perturb2_qyx = 5.2f;
+    perturb2_qyy = 1.3f;
+    perturb2_rxx = 1.7f;
+    perturb2_rxy = 9.2f;
+    perturb2_ryx = 8.3f;
+    perturb2_ryy = 2.8f;
+
     noise_contrast_type = 0;
     contrast_exponent = 1.0f;
 
@@ -194,6 +208,68 @@ void GenerateNoise(float* noisef, int modify_type)
         }
     }
 }
+
+void Perturb1(int w, int h, float* noisef)
+{
+    int modify_type = g_NoiseParams.noise_modify_type;
+    for( int y = 0; y < w; ++y )
+    {
+        for( int x = 0; x < h; ++x )
+        {
+            jcn_real qx = fbm( x, y );
+            jcn_real qy = fbm( x + g_NoiseParams.perturb1_a1, y + g_NoiseParams.perturb1_a2 );
+            float n = fbm(x + g_NoiseParams.perturb1_scale * qx, y + g_NoiseParams.perturb1_scale * qy );
+            noisef[y*w + x] = ModifyValue(n, modify_type);
+        }
+    }
+}
+
+
+void Perturb2(int w, int h, float* noisef)
+{
+    int modify_type = g_NoiseParams.noise_modify_type;
+
+    float scale = g_NoiseParams.perturb2_scale;
+    float qyx = g_NoiseParams.perturb2_qyx;
+    float qyy = g_NoiseParams.perturb2_qyy;
+    float rxx = g_NoiseParams.perturb2_rxx;
+    float rxy = g_NoiseParams.perturb2_rxy;
+    float ryx = g_NoiseParams.perturb2_ryx;
+    float ryy = g_NoiseParams.perturb2_ryy;
+    for( int y = 0; y < w; ++y )
+    {
+        for( int x = 0; x < h; ++x )
+        {
+            float qx = fbm( x, y );
+            float qy = fbm( x + qyx * scale, y + qyy * scale );
+
+            float rx = fbm( x + 4.0f * scale * qx + rxx * scale, y + 4.0f * scale * qy + rxy * scale );
+            float ry = fbm( x + 4.0f * scale * qx + ryx * scale, y + 4.0f * scale * qy + ryy * scale );
+
+    // jcn_real qx = fbm( x, y );
+    // jcn_real qy = fbm( x + 5.2f * scale, y + 1.3f * scale );
+
+    // jcn_real rx = fbm( x + 4.0f * scale * qx + 1.7f * scale, y + 4.0f * scale * qy + 9.2f * scale );
+    // jcn_real ry = fbm( x + 4.0f * scale * qx + 8.3f * scale, y + 4.0f * scale * qy + 2.8f * scale );
+
+    // return fbm(x + 4.0f * scale * rx, y + 4.0f * scale * ry );
+            float n = fbm(x + 4.0f * scale * rx, y + 4.0f * scale * ry );
+            noisef[y*w + x] = ModifyValue(n, modify_type);
+        }
+    }
+}
+
+
+// jcn_real pattern2(jcn_real x, jcn_real y)
+// {
+//     jcn_real qx = fbm( x, y );
+//     jcn_real qy = fbm( x + 5.2f * 512, y + 1.3f * 512 );
+
+//     jcn_real rx = fbm( x + 4.0f * 512.0f * qx + 1.7f * 512, y + 4.0f * 512.0f * qy + 9.2f * 512 );
+//     jcn_real ry = fbm( x + 4.0f * 512.0f * qx + 8.3f * 512, y + 4.0f * 512.0f * qy + 2.8f * 512 );
+
+//     return fbm(x + 4.0f * 512.0f * rx, y + 4.0f * 512.0f * ry );
+// }
 
 void ContrastNoise(float* noisef, float exponent)
 {

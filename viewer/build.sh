@@ -29,7 +29,7 @@ elif [ "$PLATFORM" == "html5" ]; then
     CXXFLAGS="-std=c++98 -Wno-c++11-compat"
     #OPT="-O0 -g"
     #LDFLAGS="--memory-init-file 0 -s WASM=1 --shell-file index.html"
-    LDFLAGS="--memory-init-file 0 --shell-file index.html"
+    LDFLAGS="-s "BINARYEN_TRAP_MODE='clamp'" --shell-file shell.html -s TOTAL_MEMORY=134217728"
     TARGET="index.html"
 fi
 

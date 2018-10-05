@@ -34,6 +34,19 @@ struct SNoiseParameters
     int     noise_modify_type;
     int     noise_contrast_type;
 
+    int     perturb_type;
+    float   perturb1_a1;
+    float   perturb1_a2;
+    float   perturb1_scale;
+
+    float   perturb2_scale;
+    float   perturb2_qyx;
+    float   perturb2_qyy;
+    float   perturb2_rxx;
+    float   perturb2_rxy;
+    float   perturb2_ryx;
+    float   perturb2_ryy;
+
     float   contrast_exponent;
 
     bool    use_erosion;
@@ -47,6 +60,7 @@ struct SNoiseParameters
 
     bool    apply_radial;
     float   radial_falloff;
+
     SNoiseParameters();
 };
 
@@ -84,6 +98,8 @@ void ContrastNoise(float* noisef, float contrast_exponent);
 void Erode(int w, int h, float* elevation, float* sediment, float* water);
 void NoiseRadial(int w, int h, float falloff, float* noisef);
 void Blur(int w, int h, float* noisef, float threshold);
+void Perturb1(int w, int h, float* noisef);
+void Perturb2(int w, int h, float* noisef);
 void Normalize(int w, int h, float* elevation);
 
 // MAP GENERATION
